@@ -33,12 +33,17 @@ import {
 } from "../selective-extract";
 import type { TreeNode } from "../selective-extract";
 import { buildExtractArgsFor } from "./args";
+import {
+  buildFreeaceExtractArgsFor,
+  isFreeaceOutputPath,
+} from "./freeace-args";
 import { sanitizeCommandArgsForPreview } from "./preview";
 import { debugLog, debugLogCommand, isDebugEnabled } from "../debug-mode";
 import {
   ensureRuntimeReady,
   withLiveProgress,
   runWithPasswordRetry,
+  invokeGuardedRunFreeace,
   logCommandResult,
   logTruncationNotice,
   truncateForDialog,
@@ -791,8 +796,9 @@ export async function runSelectiveExtractFromModal(): Promise<void> {
       showToast("Select an archive to extract.", "info");
       return;
     }
+    const isFreeace = isFreeaceOutputPath(archive);
 
-    if (!(await ensureRuntimeReady())) return;
+    if (!isFreeace && !(await ensureRuntimeReady())) return;
     if (state.cancelRequested) {
       setStatus("Cancelled", 2000);
       return;
@@ -864,13 +870,12 @@ export async function runSelectiveExtractFromModal(): Promise<void> {
       setStatus("Cancelled", 2000);
       return;
     }
-    const args = buildExtractArgsFor(
-      archive,
-      selectedPaths,
-      password,
-      destination,
+    const args = isFreeace
+      ? buildFreeaceExtractArgsFor(archive, destination, selectedPaths)
+      : buildExtractArgsFor(archive, selectedPaths, password, destination);
+    devLog(
+      `${isFreeace ? "freeace" : "7z"} ${sanitizeCommandArgsForPreview(args).join(" ")}`,
     );
-    devLog(`7z ${sanitizeCommandArgsForPreview(args).join(" ")}`);
     debugLogCommand(args);
 
     closeSelectiveExtractModal();
@@ -889,7 +894,9 @@ export async function runSelectiveExtractFromModal(): Promise<void> {
     }
 
     const result = await withLiveProgress(() =>
-      runWithPasswordRetry(args, true, "Extract", browsedIdentity),
+      isFreeace
+        ? invokeGuardedRunFreeace(args)
+        : runWithPasswordRetry(args, true, "Extract", browsedIdentity),
     );
     if (state.cancelRequested && result.code !== 0) {
       hideProgress();
@@ -903,7 +910,7 @@ export async function runSelectiveExtractFromModal(): Promise<void> {
     devLog(`Exit code: ${result.code}`);
 
     if (result.code !== 0) {
-      log(`7z exited with code ${result.code}`);
+      log(`${isFreeace ? "freeace" : "7z"} exited with code ${result.code}`);
       if (isDebugEnabled()) {
         debugLog(`Selective extract failed with exit code ${result.code}.`);
       }

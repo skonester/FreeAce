@@ -203,7 +203,11 @@ export function updateCompressionOptionsForFormat(format: string) {
     format === "tar" ||
     format === "gzip" ||
     format === "bzip2" ||
-    format === "xz"
+    format === "xz" ||
+    // Gleipnir has no store/no-compression mode -- its presets run -1
+    // (fastest) through -9 (smallest) -- so "0 - Store" would silently
+    // compress anyway under a label that promised it wouldn't.
+    format === "freeace"
   ) {
     if (currentLevel === "0") {
       levelSelect.value = "5";

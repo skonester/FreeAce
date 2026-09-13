@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   buildFreeaceCompressArgs,
   buildFreeaceExtractArgsFor,
+  buildFreeaceListArgs,
+  buildFreeaceTestArgs,
 } from "../archive/freeace-args";
 import {
   isFreeaceOutputPath,
@@ -127,5 +129,30 @@ describe("buildFreeaceExtractArgsFor", () => {
     expect(() => buildFreeaceExtractArgsFor("archive.freeace")).toThrow(
       "Choose a destination folder.",
     );
+  });
+
+  it("appends selected member paths for selective extraction", () => {
+    expect(
+      buildFreeaceExtractArgsFor("archive.freeace", "/tmp/out", [
+        "a.txt",
+        "dir/b.txt",
+      ]),
+    ).toEqual(["x", "archive.freeace", "/tmp/out", "a.txt", "dir/b.txt"]);
+  });
+});
+
+describe("buildFreeaceListArgs / buildFreeaceTestArgs", () => {
+  it("builds a list command", () => {
+    expect(buildFreeaceListArgs("archive.freeace")).toEqual([
+      "l",
+      "archive.freeace",
+    ]);
+  });
+
+  it("builds a test command", () => {
+    expect(buildFreeaceTestArgs("archive.freeace")).toEqual([
+      "t",
+      "archive.freeace",
+    ]);
   });
 });

@@ -56,8 +56,17 @@ export function buildFreeaceCompressArgs(): string[] {
 export function buildFreeaceExtractArgsFor(
   archive: string,
   destinationOverride?: string,
+  selectedPaths: string[] = [],
 ): string[] {
   const dest = destinationOverride ?? $<HTMLInputElement>("extract-path").value;
   if (!dest) throw new Error("Choose a destination folder.");
-  return ["x", archive, dest];
+  return ["x", archive, dest, ...selectedPaths];
+}
+
+export function buildFreeaceListArgs(archive: string): string[] {
+  return ["l", archive];
+}
+
+export function buildFreeaceTestArgs(archive: string): string[] {
+  return ["t", archive];
 }

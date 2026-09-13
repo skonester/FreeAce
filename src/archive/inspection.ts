@@ -16,6 +16,12 @@ import {
 import { ensureArchivePaths } from "../archive-rules";
 import { looksLikePasswordRequiredError } from "../error-hints";
 import { parseArchiveListing } from "./listing";
+import { parseFreeaceListing } from "./freeace-listing";
+import {
+  buildFreeaceListArgs,
+  buildFreeaceTestArgs,
+  isFreeaceOutputPath,
+} from "./freeace-args";
 import { registerBrowseArchiveLoader, renderBrowseTable } from "./browse-ui";
 import {
   clearPasswordFields,
@@ -24,6 +30,7 @@ import {
   logTruncationNotice,
   truncateForDialog,
   invokeGuardedRun7z,
+  invokeGuardedRunFreeace,
 } from "./runtime";
 import { debugLog, debugLogCommand, isDebugEnabled } from "../debug-mode";
 import type { ArchiveInfo } from "../browse-model";
@@ -50,17 +57,24 @@ export async function testArchive(): Promise<ArchiveTestResult> {
       return "failed";
     }
 
-    const passwordField =
-      getMode() === "browse" ? "browse-password" : "extract-password";
-    const password = $<HTMLInputElement>(passwordField).value;
-    const args = ["t", "-spd"];
-    if (password) args.push(`-p${password}`);
-    args.push("--", archive);
-
-    if (!(await ensureRuntimeReady())) return "error";
+    const isFreeace = isFreeaceOutputPath(archive);
+    let args: string[];
+    if (isFreeace) {
+      args = buildFreeaceTestArgs(archive);
+    } else {
+      const passwordField =
+        getMode() === "browse" ? "browse-password" : "extract-password";
+      const password = $<HTMLInputElement>(passwordField).value;
+      args = ["t", "-spd"];
+      if (password) args.push(`-p${password}`);
+      args.push("--", archive);
+      if (!(await ensureRuntimeReady())) return "error";
+    }
     setStatus("Testing archive integrity");
     debugLogCommand(args);
-    const result = await invokeGuardedRun7z(args);
+    const result = isFreeace
+      ? await invokeGuardedRunFreeace(args)
+      : await invokeGuardedRun7z(args);
     if (state.cancelRequested) {
       setStatus("Cancelled", 2000);
       return "cancelled";
@@ -87,7 +101,7 @@ export async function testArchive(): Promise<ArchiveTestResult> {
       clearPasswordFields();
       return "passed";
     }
-    if (result.code === 1) {
+    if (!isFreeace && result.code === 1) {
       setStatus("Integrity test failed with warnings", 3000);
       log("Archive integrity test: FAILED WITH WARNINGS (exit code 1)");
       const warningDetails = result.stderr
@@ -160,16 +174,23 @@ export async function browseArchive(): Promise<ArchiveInfo | null> {
       return null;
     }
 
-    const password = $<HTMLInputElement>("browse-password").value;
-    const args = ["l", "-slt", "-spd"];
-    if (password) args.push(`-p${password}`);
-    args.push("--", archive);
-
-    if (!(await ensureRuntimeReady())) return null;
+    const isFreeace = isFreeaceOutputPath(archive);
+    let args: string[];
+    if (isFreeace) {
+      args = buildFreeaceListArgs(archive);
+    } else {
+      const password = $<HTMLInputElement>("browse-password").value;
+      args = ["l", "-slt", "-spd"];
+      if (password) args.push(`-p${password}`);
+      args.push("--", archive);
+      if (!(await ensureRuntimeReady())) return null;
+    }
     setStatus("Listing archive contents");
     if (isDebugEnabled()) debugLog(`Listing archive: ${archive}`);
     debugLogCommand(args);
-    const result = await invokeGuardedRun7z(args);
+    const result = isFreeace
+      ? await invokeGuardedRunFreeace(args)
+      : await invokeGuardedRun7z(args);
     if (state.cancelRequested) {
       setStatus("Cancelled", 2000);
       return null;
@@ -226,7 +247,9 @@ export async function browseArchive(): Promise<ArchiveInfo | null> {
         "Archive changed while its contents were being listed. Browse it again.",
       );
     }
-    const info = parseArchiveListing(result.stdout);
+    const info = isFreeace
+      ? parseFreeaceListing(result.stdout)
+      : parseArchiveListing(result.stdout);
     clearBrowseCache(archive);
     cacheBrowseInfo(archive, info);
     cacheBrowseIdentity(archive, afterListing.identity);

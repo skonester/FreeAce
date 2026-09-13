@@ -181,7 +181,7 @@ import {
   updateBasicRunningState,
   updateBasicStatus,
 } from "../basic";
-import { isArchiveEncrypted } from "../basic/actions";
+import { isArchiveEncrypted, testArchivePassword } from "../basic/actions";
 import { setBasicBarDeterminate, resetBasicBar } from "../basic/progress";
 import { setSevenZipRunInFlight } from "../archive/runtime";
 
@@ -524,6 +524,36 @@ describe("basic-ui views and rendering", () => {
     expect(decodeRun7zInvokePayload(runCall?.[1])).toEqual({
       args: ["l", "-slt", "-spd", "--", archive],
     });
+  });
+
+  it("never treats a .freeace archive as encrypted, and never asks 7z about it", async () => {
+    const archive = "/tmp/example.freeace";
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_7z") {
+        throw new Error("must not probe .freeace archives with 7z");
+      }
+      return Promise.resolve(undefined);
+    });
+
+    await expect(isArchiveEncrypted(archive)).resolves.toBe(false);
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "run_7z"),
+    ).toBe(false);
+  });
+
+  it("treats any .freeace password check as passing without invoking 7z", async () => {
+    const archive = "/tmp/example.freeace";
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_7z") {
+        throw new Error("must not probe .freeace archives with 7z");
+      }
+      return Promise.resolve(undefined);
+    });
+
+    await expect(testArchivePassword(archive, "")).resolves.toBe("ok");
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "run_7z"),
+    ).toBe(false);
   });
 
   it("switches to compress view and enforces format encryption support", () => {
