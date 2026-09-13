@@ -16,6 +16,8 @@ env:
   NODE_VERSION: "24.16.0"
   NPM_VERSION: "12.0.2"
   RUST_VERSION: "stable"
+  # This workflow produces unsigned artifacts only -- see header comment.
+  SKIP_WIN_CODESIGN: "1"
 
 jobs:
   build:
