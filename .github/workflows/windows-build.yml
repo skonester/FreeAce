@@ -57,8 +57,13 @@ jobs:
       # which is not built by this workflow.
       - run: npm run prepare:win-shell-stubs
 
+      - name: Disable updater artifact signing for this unsigned build
+        shell: pwsh
+        run: |
+          Set-Content -Path ci-no-updater.conf.json -Encoding utf8 -Value '{"bundle":{"createUpdaterArtifacts":false}}'
+
       - name: Build app + NSIS installer
-        run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
+        run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis --config ci-no-updater.conf.json
 
       - name: Upload app exe
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

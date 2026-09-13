@@ -81,6 +81,7 @@ jobs:
   rust-check:
     needs: quality-gate
     strategy:
+      fail-fast: false
       matrix:
         # Pin macos-26: bundled 7-Zip / minimumSystemVersion require 26.0+.
         # macos-latest still resolves to macOS 15 arm64 on GitHub-hosted runners.
@@ -138,6 +139,7 @@ jobs:
   smoke-build:
     needs: quality-gate
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
