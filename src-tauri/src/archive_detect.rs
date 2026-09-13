@@ -464,7 +464,10 @@ mod tests {
             Some("rar")
         );
         assert_eq!(detect_archive_signature(b"plain-text"), None);
-        assert_eq!(detect_archive_signature(b"GENA anything after"), Some("freeace"));
+        assert_eq!(
+            detect_archive_signature(b"GENA anything after"),
+            Some("freeace")
+        );
     }
 
     #[test]

@@ -117,7 +117,9 @@ if (!skipContextMenu) {
     runPowershell(signScript, ["-FilePath", extractShellDll]);
     console.log("[tauri-windows-build] Signing FreeAceContextMenu.msix…");
     runPowershell(signScript, ["-FilePath", shellMsix, "-AllowSparseMsix"]);
-    console.log("[tauri-windows-build] Signing FreeAceExtractContextMenu.msix…");
+    console.log(
+      "[tauri-windows-build] Signing FreeAceExtractContextMenu.msix…",
+    );
     runPowershell(signScript, [
       "-FilePath",
       extractShellMsix,

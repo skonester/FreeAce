@@ -2,13 +2,7 @@ import { parseThreads } from "./utils.ts";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ArchiveFormat =
-  | "7z"
-  | "zip"
-  | "tar"
-  | "gzip"
-  | "bzip2"
-  | "xz"
-  | "freeace";
+  "7z" | "zip" | "tar" | "gzip" | "bzip2" | "xz" | "freeace";
 export type PathMode = "relative";
 export type LogVerbosity = "info" | "debug";
 export type UpdateChannel = "auto" | "stable" | "beta";

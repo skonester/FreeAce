@@ -86,7 +86,10 @@ impl CollectedFreeaceOutput {
         if self.stream_error.is_some() {
             return -1;
         }
-        self.exit.as_ref().and_then(|payload| payload.code).unwrap_or(-1)
+        self.exit
+            .as_ref()
+            .and_then(|payload| payload.code)
+            .unwrap_or(-1)
     }
 }
 
@@ -116,7 +119,12 @@ async fn collect_freeace_output(
         match event {
             CommandEvent::Stdout(line) => {
                 let chunk = stdout_decoder.push(&line);
-                append_limited_output(&mut out.stdout, &chunk, max_bytes, &mut out.stdout_truncated);
+                append_limited_output(
+                    &mut out.stdout,
+                    &chunk,
+                    max_bytes,
+                    &mut out.stdout_truncated,
+                );
             }
             CommandEvent::Stderr(line) => {
                 let chunk = stderr_decoder.push(&line);
@@ -126,19 +134,39 @@ async fn collect_freeace_output(
                         last_progress_emit = std::time::Instant::now();
                     }
                 }
-                append_limited_output(&mut out.stderr, &chunk, max_bytes, &mut out.stderr_truncated);
+                append_limited_output(
+                    &mut out.stderr,
+                    &chunk,
+                    max_bytes,
+                    &mut out.stderr_truncated,
+                );
             }
             CommandEvent::Terminated(payload) => {
                 let stdout_tail = stdout_decoder.finish();
-                append_limited_output(&mut out.stdout, &stdout_tail, max_bytes, &mut out.stdout_truncated);
+                append_limited_output(
+                    &mut out.stdout,
+                    &stdout_tail,
+                    max_bytes,
+                    &mut out.stdout_truncated,
+                );
                 let stderr_tail = stderr_decoder.finish();
-                append_limited_output(&mut out.stderr, &stderr_tail, max_bytes, &mut out.stderr_truncated);
+                append_limited_output(
+                    &mut out.stderr,
+                    &stderr_tail,
+                    max_bytes,
+                    &mut out.stderr_truncated,
+                );
                 out.exit = Some(payload);
                 break;
             }
             CommandEvent::Error(error) => {
                 let detail = format!("freeace process error: {error}");
-                append_limited_output(&mut out.stderr, &detail, max_bytes, &mut out.stderr_truncated);
+                append_limited_output(
+                    &mut out.stderr,
+                    &detail,
+                    max_bytes,
+                    &mut out.stderr_truncated,
+                );
                 if out.stream_error.is_none() {
                     out.stream_error = Some(error);
                 }

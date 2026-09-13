@@ -255,7 +255,10 @@ describe("release script safeguards", () => {
       artifactMatchesVersion("freeace_0.6.0-beta.22_amd64.deb", "0.6.0"),
     ).toBe(false);
     expect(
-      artifactMatchesVersion("freeace_0.6.0-beta.22_amd64.deb", "0.6.0-beta.22"),
+      artifactMatchesVersion(
+        "freeace_0.6.0-beta.22_amd64.deb",
+        "0.6.0-beta.22",
+      ),
     ).toBe(true);
   });
 

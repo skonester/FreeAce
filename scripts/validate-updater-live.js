@@ -319,7 +319,9 @@ async function verifyDownloadedArtifacts(manifestBodies) {
 }
 
 async function run() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "freeace-updater-live-"));
+  const tmpDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "freeace-updater-live-"),
+  );
   const files = [];
   const skipped = [];
   // process.exit() would skip the finally cleanup; every early exit goes here.

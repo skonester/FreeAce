@@ -761,14 +761,15 @@ pub fn validate_run_freeace_args(args: &[String]) -> Result<(), String> {
         }
         "x" => {
             if positionals.is_empty() || positionals.len() > 2 {
-                return Err("freeace extract requires an archive and an optional destination folder.".to_string());
+                return Err(
+                    "freeace extract requires an archive and an optional destination folder."
+                        .to_string(),
+                );
             }
         }
         "l" | "t" => {
             if positionals.len() != 1 {
-                return Err(format!(
-                    "freeace {cmd} requires exactly one archive path."
-                ));
+                return Err(format!("freeace {cmd} requires exactly one archive path."));
             }
         }
         _ => unreachable!(),
@@ -1498,10 +1499,8 @@ mod tests {
             "/tmp/dest".to_string(),
         ])
         .expect("extract with destination");
-        validate_run_freeace_args(&["l".to_string(), "archive.freeace".to_string()])
-            .expect("list");
-        validate_run_freeace_args(&["t".to_string(), "archive.freeace".to_string()])
-            .expect("test");
+        validate_run_freeace_args(&["l".to_string(), "archive.freeace".to_string()]).expect("list");
+        validate_run_freeace_args(&["t".to_string(), "archive.freeace".to_string()]).expect("test");
     }
 
     #[test]

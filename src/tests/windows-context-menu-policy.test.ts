@@ -184,7 +184,9 @@ describe("Windows 11 context-menu manifest", () => {
     const postUninstall = hooks.slice(
       hooks.indexOf("!macro NSIS_HOOK_POSTUNINSTALL"),
     );
-    expect(postUninstall).not.toContain("FREEACE_UNREGISTER_WIN11_CONTEXT_MENU");
+    expect(postUninstall).not.toContain(
+      "FREEACE_UNREGISTER_WIN11_CONTEXT_MENU",
+    );
     expect(postUninstall).toContain(
       '!insertmacro FREEACE_CLEAN_SHELL_PAYLOADS "" freeace_uninstall_shell_cleanup',
     );
@@ -404,6 +406,8 @@ describe("Windows 11 context-menu manifest", () => {
     expect(shellSource).toContain("QuoteArgument");
     expect(shellSource).toContain("DirectoryNameStartsWithShellDash");
     expect(shellSource).toContain("if (length == 0) return std::wstring();");
-    expect(shellSource).not.toContain('if (length == 0) return L"freeace.exe";');
+    expect(shellSource).not.toContain(
+      'if (length == 0) return L"freeace.exe";',
+    );
   });
 });

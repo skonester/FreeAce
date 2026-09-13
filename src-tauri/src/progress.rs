@@ -303,10 +303,9 @@ mod tests {
 
     #[test]
     fn parses_freeace_progress_line() {
-        let u = parse_freeace_progress_line(
-            "\r  compress  42.3%  10/24 MB  1.23 MB/s  eta 0h05m    ",
-        )
-        .expect("should parse");
+        let u =
+            parse_freeace_progress_line("\r  compress  42.3%  10/24 MB  1.23 MB/s  eta 0h05m    ")
+                .expect("should parse");
         assert_eq!(u.percent, Some(42));
         assert_eq!(
             u.current_file.as_deref(),

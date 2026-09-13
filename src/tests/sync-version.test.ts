@@ -174,7 +174,8 @@ describe("Windows shell resource destinations", () => {
       "windows/shell/out/freeace_shell.dll": "old/freeace_shell.dll",
       "windows/shell/out/freeace_extract_shell.dll":
         "old/freeace_extract_shell.dll",
-      "windows/shell/out/FreeAceContextMenu.msix": "old/FreeAceContextMenu.msix",
+      "windows/shell/out/FreeAceContextMenu.msix":
+        "old/FreeAceContextMenu.msix",
       "windows/shell/out/FreeAceExtractContextMenu.msix":
         "old/FreeAceExtractContextMenu.msix",
       "../scripts/register-windows-context-menu.ps1":

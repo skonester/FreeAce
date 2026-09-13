@@ -335,7 +335,8 @@ function cleanArtifactBaseName(name) {
 
   // The public Flatpak release currently targets Linux x64 only. Normalize
   // generic files left by older build scripts to the documented asset name.
-  if (/^FreeAce-Linux\.flatpak$/i.test(name)) return "FreeAce-Linux-x64.flatpak";
+  if (/^FreeAce-Linux\.flatpak$/i.test(name))
+    return "FreeAce-Linux-x64.flatpak";
 
   return name;
 }

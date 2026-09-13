@@ -211,10 +211,10 @@ mod tests {
     #[test]
     fn linux_default_query_marks_freeace_defaults() {
         let backend = FakeLinuxMimeBackend::new();
-        backend
-            .defaults
-            .borrow_mut()
-            .insert("application/zip".to_string(), FREEACE_DESKTOP_ID.to_string());
+        backend.defaults.borrow_mut().insert(
+            "application/zip".to_string(),
+            FREEACE_DESKTOP_ID.to_string(),
+        );
 
         let defaults = linux_query_archive_defaults(&backend, true);
         let zip = defaults.iter().find(|entry| entry.key == "zip").unwrap();

@@ -266,7 +266,8 @@ function resolveOnPath(command) {
 }
 
 function resolveTrustedExtractor() {
-  const supplied = optionValue("--trusted-7z") || process.env.FREEACE_TRUSTED_7Z;
+  const supplied =
+    optionValue("--trusted-7z") || process.env.FREEACE_TRUSTED_7Z;
   const suppliedPath = supplied
     ? path.isAbsolute(supplied)
       ? supplied

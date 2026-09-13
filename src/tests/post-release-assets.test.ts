@@ -108,7 +108,10 @@ describe("post-release assets", () => {
       false,
     );
     expect(
-      fs.readFileSync(path.join(destination, "FreeAce-Windows-x64.exe"), "utf8"),
+      fs.readFileSync(
+        path.join(destination, "FreeAce-Windows-x64.exe"),
+        "utf8",
+      ),
     ).toBe("installer");
     expect(
       fs.readFileSync(
@@ -160,9 +163,9 @@ describe("post-release assets", () => {
       skippedBetaMirror: false,
     });
     expect(fs.existsSync(buildOnly)).toBe(false);
-    expect(fs.existsSync(path.join(releaseDir, "FreeAce-Windows-x64.exe"))).toBe(
-      true,
-    );
+    expect(
+      fs.existsSync(path.join(releaseDir, "FreeAce-Windows-x64.exe")),
+    ).toBe(true);
   });
 
   it("skips AFTER_PACK_LOC mirroring for beta versions unless overridden", () => {
@@ -221,7 +224,10 @@ describe("post-release assets", () => {
       skippedBetaMirror: false,
     });
     expect(
-      fs.readFileSync(path.join(destination, "FreeAce-Windows-x64.exe"), "utf8"),
+      fs.readFileSync(
+        path.join(destination, "FreeAce-Windows-x64.exe"),
+        "utf8",
+      ),
     ).toBe("installer");
   });
 
@@ -323,7 +329,10 @@ describe("post-release assets", () => {
     expect(combined).toContain("[release:mirror] starting");
     expect(combined).toContain(`AFTER_PACK_LOC=${JSON.stringify(destination)}`);
     expect(
-      fs.readFileSync(path.join(destination, "FreeAce-Windows-x64.exe"), "utf8"),
+      fs.readFileSync(
+        path.join(destination, "FreeAce-Windows-x64.exe"),
+        "utf8",
+      ),
     ).toBe("installer");
   });
 
