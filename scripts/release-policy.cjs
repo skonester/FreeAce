@@ -49,6 +49,9 @@ function assertStableReleaseOverridesAllowed(
   env = process.env,
   version = readPackageVersion(),
 ) {
+  // Non-release CI builds (e.g. windows-build.yml) never publish anything and
+  // are exempt from the stable-release override guard below.
+  if (isExplicitTruthy(env.FREEACE_NON_RELEASE_BUILD)) return;
   if (!isStableReleaseVersion(version)) return;
   const blocked = STABLE_FORBIDDEN_ENV.filter((name) =>
     isExplicitTruthy(env[name]),

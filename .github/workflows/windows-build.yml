@@ -17,7 +17,10 @@ env:
   NPM_VERSION: "12.0.2"
   RUST_VERSION: "stable"
   # This workflow produces unsigned artifacts only -- see header comment.
+  # FREEACE_NON_RELEASE_BUILD exempts it from release-policy.cjs's stable-release
+  # guard, which otherwise refuses SKIP_WIN_CODESIGN on a non-prerelease version.
   SKIP_WIN_CODESIGN: "1"
+  FREEACE_NON_RELEASE_BUILD: "1"
 
 jobs:
   build:
