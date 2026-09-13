@@ -1161,7 +1161,7 @@ name = "freeace"
 version = "0.6.2"
 dependencies = [
  "block2",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "libc",
  "minisign-verify",
  "objc2",
