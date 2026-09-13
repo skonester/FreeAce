@@ -1,0 +1,4 @@
+LIBRARY freeace_shell
+EXPORTS
+    DllCanUnloadNow PRIVATE
+    DllGetClassObject PRIVATE

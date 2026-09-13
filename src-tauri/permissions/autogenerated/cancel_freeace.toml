@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cancel-freeace"
+description = "Enables the cancel_freeace command without any pre-configured scope."
+commands.allow = ["cancel_freeace"]
+
+[[permission]]
+identifier = "deny-cancel-freeace"
+description = "Denies the cancel_freeace command without any pre-configured scope."
+commands.deny = ["cancel_freeace"]

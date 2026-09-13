@@ -1,0 +1,137 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FreeAce",
+  "version": "0.6.2",
+  "identifier": "run.rosie.freeace",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run prepare:macos:finder-sync && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "create": false,
+        "title": "FreeAce",
+        "width": 500,
+        "height": 600,
+        "minWidth": 360,
+        "minHeight": 400,
+        "resizable": true,
+        "visible": false,
+        "transparent": true,
+        "titleBarStyle": "Overlay"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; frame-src 'none'; worker-src 'none'",
+      "capabilities": ["default", "extract-window", "debug-console-window"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app", "nsis", "appimage", "deb", "rpm"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "externalBin": ["binaries/7z", "binaries/gleipnir"],
+    "fileAssociations": [
+      {
+        "ext": ["7z"],
+        "mimeType": "application/x-7z-compressed",
+        "description": "7-Zip Archive"
+      },
+      {
+        "ext": ["freeace"],
+        "mimeType": "application/x-freeace",
+        "description": "FreeAce Archive"
+      },
+      {
+        "ext": ["zip"],
+        "mimeType": "application/zip",
+        "description": "ZIP Archive"
+      },
+      {
+        "ext": ["tar"],
+        "mimeType": "application/x-tar",
+        "description": "TAR Archive"
+      },
+      {
+        "ext": ["gz"],
+        "mimeType": "application/gzip",
+        "description": "Gzip Archive"
+      },
+      {
+        "ext": ["tgz"],
+        "mimeType": "application/x-compressed-tar",
+        "description": "Gzip Compressed TAR Archive"
+      },
+      {
+        "ext": ["bz2"],
+        "mimeType": "application/x-bzip2",
+        "description": "Bzip2 Archive"
+      },
+      {
+        "ext": ["tbz2"],
+        "mimeType": "application/x-bzip2-compressed-tar",
+        "description": "Bzip2 Compressed TAR Archive"
+      },
+      {
+        "ext": ["xz"],
+        "mimeType": "application/x-xz",
+        "description": "XZ Archive"
+      },
+      {
+        "ext": ["txz"],
+        "mimeType": "application/x-xz-compressed-tar",
+        "description": "XZ Compressed TAR Archive"
+      }
+    ],
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "windows/nsis-hooks.nsh"
+      }
+    },
+    "macOS": {
+      "entitlements": "macos/build/FreeAce.entitlements",
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "26.0",
+      "bundleVersion": "0.6.29999",
+      "files": {
+        "PlugIns/FreeAceFinderSync.appex": "macos/build/FreeAceFinderSync.appex"
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      },
+      "deb": {
+        "desktopTemplate": "linux/desktop-template.hbs"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/desktop-template.hbs"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/skonester/FreeAce/releases/latest/download/latest-{{target}}-{{arch}}.json",
+        "https://github.com/skonester/FreeAce/releases/latest/download/latest-{{target}}.json",
+        "https://github.com/skonester/FreeAce/releases/download/v{{current_version}}/latest-{{target}}-{{arch}}.json",
+        "https://github.com/skonester/FreeAce/releases/download/v{{current_version}}/latest-{{target}}.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5RTAwQ0YyRjU4NENCNkMKUldSc3k0VDE4Z3pnK2NQaXdzYXkzWklabm9tTTZvSTErcmNQSkZFL2d3VnpXNnlHL2R0WjAwMHcK"
+    }
+  }
+}

@@ -1,0 +1,90 @@
+app-id: run.rosie.freeace
+runtime: org.gnome.Platform
+runtime-version: "50"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node22
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: freeace
+separate-locales: false
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Broad FS access is intentional for a file archiver: the 7z sidecar must
+  # read/write user-selected paths. Portals alone are not enough today.
+  # See SECURITY.md "Flatpak filesystem access".
+  - --filesystem=home
+  # Common download / removable mount points outside $HOME (USB, etc.).
+  - --filesystem=xdg-download
+  - --filesystem=/media
+  - --filesystem=/run/media
+  - --filesystem=/mnt
+  # No --share=network: Flatpak builds update via the host store / reinstall,
+  # not the in-app GitHub updater (UI is hidden under .platform-flatpak).
+
+environment:
+  GTK_USE_PORTAL: "1"
+
+modules:
+  - name: freeace
+    buildsystem: simple
+    build-options:
+      # npm and Cargo fetch only integrity-locked dependencies. Application
+      # sources come from the clean commit export prepared by the host script.
+      build-args:
+        - --share=network
+      append-path: /run/build/freeace/npm-global/bin:/usr/lib/sdk/node22/bin:/usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/freeace/cargo
+        RUSTUP_HOME: /run/build/freeace/rustup
+        npm_config_cache: /run/build/freeace/npm-cache
+        HUSKY: "0"
+        RUSTUP_TOOLCHAIN: stable
+    build-commands:
+      # node22 SDK ships npm 10.x, which does not support --min-release-age.
+      # npm@12 plus --before 3 days ago takes the newest 12.x that is old enough.
+      - npm install --global npm@12 --ignore-scripts --engine-strict=false --before="$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)" --prefix /run/build/freeace/npm-global
+      - npm ci --engine-strict=false
+      - npm run sync-version
+      - npm run prepare:7z:all
+      - npm run licenses
+      - npm run build
+      - npx tauri build --no-bundle -- --locked
+      - install -Dm755 src-tauri/target/release/freeace /app/bin/freeace
+      - |
+        case "$FLATPAK_ARCH" in
+          aarch64)
+            install -Dm755 src-tauri/binaries/7z-aarch64-unknown-linux-gnu /app/bin/7z
+            ;;
+          x86_64)
+            install -Dm755 src-tauri/binaries/7z-x86_64-unknown-linux-gnu /app/bin/7z
+            ;;
+          *)
+            echo "Unsupported FLATPAK_ARCH=$FLATPAK_ARCH (expected x86_64 or aarch64)" >&2
+            exit 1
+            ;;
+        esac
+      - install -Dm644 run.rosie.freeace.desktop /app/share/applications/run.rosie.freeace.desktop
+      - install -Dm644 run.rosie.freeace.metainfo.xml /app/share/metainfo/run.rosie.freeace.metainfo.xml
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/run.rosie.freeace.png
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/run.rosie.freeace.png
+      - install -Dm644 src-tauri/icons/icon.png /app/share/icons/hicolor/512x512/apps/run.rosie.freeace.png
+    sources:
+      - type: dir
+        path: .flatpak-source
+        skip:
+          - .git
+          - .github
+          - .agents
+          - .codex
+          - .env
+          - .env.*
+          - node_modules
+          - src-tauri/target
+          - dist
+          - release
+          - flatpak-build
+          - flatpak-repo

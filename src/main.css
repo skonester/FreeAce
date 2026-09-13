@@ -1,0 +1,10 @@
+@import "./variables.css";
+@import "./basic-mode.css";
+@import "./progress-pct.css";
+@import "./styles/main-pre.css";
+@import "./styles/window-fx.css";
+@import "./styles/main-base.css";
+@import "./styles/settings.css";
+@import "./styles/main-mid.css";
+@import "./styles/platform.css";
+@import "./styles/titlebar.css";

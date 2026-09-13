@@ -1,0 +1,84 @@
+{
+  "bundle": {
+    "resources": {
+      "windows/shell/out/freeace_shell.dll": "shell-0.6.2/freeace_shell.dll",
+      "windows/shell/out/freeace_extract_shell.dll": "shell-0.6.2/freeace_extract_shell.dll",
+      "windows/shell/out/FreeAceContextMenu.msix": "shell-0.6.2/FreeAceContextMenu.msix",
+      "windows/shell/out/FreeAceExtractContextMenu.msix": "shell-0.6.2/FreeAceExtractContextMenu.msix",
+      "../scripts/register-windows-context-menu.ps1": "shell-0.6.2/register-windows-context-menu.ps1",
+      "binaries/7z.dll": "7z.dll"
+    },
+    "fileAssociations": [
+      {
+        "ext": ["rar"],
+        "mimeType": "application/vnd.rar",
+        "description": "RAR Archive"
+      },
+      {
+        "ext": ["7z"],
+        "mimeType": "application/x-7z-compressed",
+        "description": "7-Zip Archive"
+      },
+      {
+        "ext": ["freeace"],
+        "mimeType": "application/x-freeace",
+        "description": "FreeAce Archive"
+      },
+      {
+        "ext": ["zip"],
+        "mimeType": "application/zip",
+        "description": "ZIP Archive"
+      },
+      {
+        "ext": ["tar"],
+        "mimeType": "application/x-tar",
+        "description": "TAR Archive"
+      },
+      {
+        "ext": ["gz"],
+        "mimeType": "application/gzip",
+        "description": "Gzip Archive"
+      },
+      {
+        "ext": ["tgz"],
+        "mimeType": "application/x-compressed-tar",
+        "description": "Gzip Compressed TAR Archive"
+      },
+      {
+        "ext": ["bz2"],
+        "mimeType": "application/x-bzip2",
+        "description": "Bzip2 Archive"
+      },
+      {
+        "ext": ["tbz2"],
+        "mimeType": "application/x-bzip2-compressed-tar",
+        "description": "Bzip2 Compressed TAR Archive"
+      },
+      {
+        "ext": ["xz"],
+        "mimeType": "application/x-xz",
+        "description": "XZ Archive"
+      },
+      {
+        "ext": ["txz"],
+        "mimeType": "application/x-xz-compressed-tar",
+        "description": "XZ Compressed TAR Archive"
+      }
+    ],
+    "windows": {
+      "signCommand": {
+        "cmd": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "../scripts/windows-artifact-sign.ps1",
+          "-FilePath",
+          "%1"
+        ]
+      }
+    }
+  }
+}

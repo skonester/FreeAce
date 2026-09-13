@@ -1,0 +1,306 @@
+import { isE2eFrontend } from "./e2e-env";
+import { saveSettings, applyTheme } from "./settings";
+import { state } from "./state";
+import {
+  refreshDefaultArchiverActionButton,
+  runDefaultArchiverAction,
+} from "./os-integration";
+import type {
+  ThemePreference,
+  WorkspaceMode,
+  UpdateChannel,
+} from "./settings-model";
+import { trapFocus, releaseFocusTrap } from "./utils";
+import { setProgressPercentClass } from "./progress-bar";
+
+const SETUP_WIZARD_VERSION = 3;
+const ALL_STEPS = [0, 1, 2, 3, 4] as const;
+const FLATPAK_STEPS = [0, 1, 2, 4] as const;
+
+interface SetupWizardResult {
+  workspaceMode: WorkspaceMode;
+  theme: ThemePreference;
+  autoCheckUpdates: boolean;
+  updateChannel: UpdateChannel;
+  osIntegrationDismissed: boolean;
+}
+
+export interface SetupWizardOptions {
+  /** Flatpak has no in-app updater; skip the updates step and force off. */
+  skipUpdates?: boolean;
+}
+
+function $(id: string): HTMLElement {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`#${id} not found`);
+  return el;
+}
+
+function setProgress(step: number, visibleSteps: readonly number[]): void {
+  const bar = $("setup-wizard-progress-bar");
+  const index = Math.max(visibleSteps.indexOf(step), 0);
+  const lastIndex = visibleSteps.length - 1;
+  const pct = (index / lastIndex) * 100;
+  setProgressPercentClass(bar, pct);
+  bar.setAttribute("aria-valuenow", String(Math.round(pct)));
+  bar.setAttribute(
+    "aria-valuetext",
+    `Step ${index + 1} of ${visibleSteps.length}`,
+  );
+}
+
+function showStep(step: number, visibleSteps: readonly number[]): void {
+  const steps = document.querySelectorAll<HTMLElement>(".setup-wizard-step");
+  let activeStep: HTMLElement | null = null;
+  for (const s of steps) {
+    const idx = Number(s.dataset.step);
+    s.hidden = idx !== step;
+    if (idx === step) activeStep = s;
+  }
+  setProgress(step, visibleSteps);
+  const title = activeStep?.querySelector<HTMLElement>(
+    ".setup-wizard-step__title",
+  );
+  if (title?.id) {
+    $("setup-wizard-overlay").setAttribute("aria-labelledby", title.id);
+  }
+  title?.focus();
+}
+
+export function shouldShowSetupWizard(): boolean {
+  if (isE2eFrontend()) return false;
+  const setupMarkedComplete =
+    state.currentSettings.setupComplete === true ||
+    state.settingsExtras._setupComplete === true;
+  if (!setupMarkedComplete) {
+    return true;
+  }
+
+  const storedVersion = state.settingsExtras._setupWizardVersion;
+  return storedVersion !== SETUP_WIZARD_VERSION;
+}
+
+export async function markSetupComplete(): Promise<void> {
+  state.currentSettings.setupComplete = true;
+  state.settingsExtras._setupComplete = true;
+  state.settingsExtras._setupWizardVersion = SETUP_WIZARD_VERSION;
+  try {
+    await saveSettings(state.currentSettings, state.settingsExtras);
+    state.lastPersistedSettings = { ...state.currentSettings };
+  } catch (err) {
+    // Keep in-memory completion so Skip/finish still dismisses the wizard this
+    // session even if disk persistence fails (e.g. Windows dir fsync denied).
+    state.lastPersistedSettings = { ...state.currentSettings };
+    throw err;
+  }
+}
+
+export function showSetupWizard(
+  options: SetupWizardOptions = {},
+): Promise<SetupWizardResult | null> {
+  const skipUpdates = options.skipUpdates === true;
+  return new Promise((resolve) => {
+    const overlay = $("setup-wizard-overlay");
+    const card = overlay.querySelector<HTMLElement>(".setup-wizard-card");
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const visibleSteps = skipUpdates ? FLATPAK_STEPS : ALL_STEPS;
+    overlay.hidden = false;
+    if (card) trapFocus(card);
+
+    let selectedWorkspace: WorkspaceMode = state.currentSettings.workspaceMode;
+    let selectedTheme: ThemePreference = state.currentSettings.theme;
+    let selectedAutoUpdates = skipUpdates
+      ? false
+      : state.currentSettings.autoCheckUpdates;
+    let selectedChannel: UpdateChannel =
+      state.currentSettings.updateChannel === "beta" ||
+      state.currentSettings.updateChannel === "auto"
+        ? state.currentSettings.updateChannel
+        : "stable";
+
+    const welcomeNext = $("setup-welcome-next") as HTMLButtonElement;
+    const welcomeSkip = $("setup-welcome-skip") as HTMLButtonElement;
+    const workspaceBack = $("setup-workspace-back") as HTMLButtonElement;
+    const workspaceNext = $("setup-workspace-next") as HTMLButtonElement;
+    const themeBack = $("setup-theme-back") as HTMLButtonElement;
+    const themeNext = $("setup-theme-next") as HTMLButtonElement;
+    const updatesBack = $("setup-updates-back") as HTMLButtonElement;
+    const updatesNext = $("setup-updates-next") as HTMLButtonElement;
+    const osBack = $("setup-os-back") as HTMLButtonElement;
+    const osOpen = $("setup-os-open") as HTMLButtonElement;
+    const osNext = $("setup-os-next") as HTMLButtonElement;
+    const autoUpdates = $("setup-auto-updates") as HTMLInputElement;
+    const updateChannel = $("setup-update-channel") as HTMLSelectElement;
+    const workspaceButtons = document.querySelectorAll<HTMLButtonElement>(
+      ".setup-wizard-mode-btn",
+    );
+    const themeButtons = document.querySelectorAll<HTMLButtonElement>(
+      ".setup-wizard-theme-btn",
+    );
+
+    function goTo(step: number): void {
+      showStep(step, visibleSteps);
+    }
+
+    function setWorkspaceSelection(mode: WorkspaceMode): void {
+      selectedWorkspace = mode;
+      workspaceButtons.forEach((btn) => {
+        const active = btn.dataset.workspaceValue === mode;
+        btn.classList.toggle("setup-wizard-choice-btn--active", active);
+        btn.setAttribute("aria-pressed", String(active));
+      });
+    }
+
+    function setThemeSelection(theme: ThemePreference): void {
+      selectedTheme = theme;
+      themeButtons.forEach((btn) => {
+        const active = btn.dataset.themeValue === theme;
+        btn.classList.toggle("setup-wizard-choice-btn--active", active);
+        btn.setAttribute("aria-pressed", String(active));
+      });
+      applyTheme(theme);
+    }
+
+    function cleanup(): void {
+      overlay.hidden = true;
+      if (card) releaseFocusTrap(card);
+      welcomeNext.removeEventListener("click", onWelcomeNext);
+      welcomeSkip.removeEventListener("click", onWelcomeSkip);
+      workspaceBack.removeEventListener("click", onWorkspaceBack);
+      workspaceNext.removeEventListener("click", onWorkspaceNext);
+      themeBack.removeEventListener("click", onThemeBack);
+      themeNext.removeEventListener("click", onThemeNext);
+      updatesBack.removeEventListener("click", onUpdatesBack);
+      updatesNext.removeEventListener("click", onUpdatesNext);
+      osBack.removeEventListener("click", onOsBack);
+      osOpen.removeEventListener("click", onOsOpen);
+      osNext.removeEventListener("click", onOsNext);
+      autoUpdates.removeEventListener("change", onAutoUpdatesChange);
+      updateChannel.removeEventListener("change", onUpdateChannelChange);
+      workspaceButtons.forEach((btn) =>
+        btn.removeEventListener("click", onWorkspaceSelect),
+      );
+      themeButtons.forEach((btn) => btn.removeEventListener("click", onTheme));
+      if (
+        previousFocus?.isConnected &&
+        !overlay.contains(previousFocus) &&
+        !previousFocus.closest("[hidden]")
+      ) {
+        previousFocus.focus();
+      }
+    }
+
+    function onWorkspaceSelect(this: HTMLButtonElement): void {
+      const selected =
+        this.dataset.workspaceValue === "power" ? "power" : "basic";
+      setWorkspaceSelection(selected);
+    }
+
+    function onTheme(this: HTMLButtonElement): void {
+      const selected = this.dataset.themeValue;
+      if (
+        selected === "dark" ||
+        selected === "light" ||
+        selected === "system"
+      ) {
+        setThemeSelection(selected);
+      }
+    }
+
+    function onAutoUpdatesChange(): void {
+      selectedAutoUpdates = autoUpdates.checked;
+    }
+
+    function onUpdateChannelChange(): void {
+      if (updateChannel.value === "beta") {
+        selectedChannel = "beta";
+      } else if (updateChannel.value === "auto") {
+        selectedChannel = "auto";
+      } else {
+        selectedChannel = "stable";
+      }
+    }
+
+    function onWelcomeNext(): void {
+      goTo(1);
+    }
+
+    function onWelcomeSkip(): void {
+      cleanup();
+      resolve(null);
+    }
+
+    function onWorkspaceBack(): void {
+      goTo(0);
+    }
+
+    function onWorkspaceNext(): void {
+      goTo(2);
+    }
+
+    function onThemeBack(): void {
+      goTo(1);
+    }
+
+    function onThemeNext(): void {
+      // Flatpak: skip updates (step 3) and go straight to OS integration.
+      goTo(skipUpdates ? 4 : 3);
+    }
+
+    function onUpdatesBack(): void {
+      goTo(2);
+    }
+
+    function onUpdatesNext(): void {
+      goTo(4);
+    }
+
+    function onOsBack(): void {
+      goTo(skipUpdates ? 2 : 3);
+    }
+
+    function onOsOpen(): void {
+      void runDefaultArchiverAction(osOpen);
+    }
+
+    function onOsNext(): void {
+      const result: SetupWizardResult = {
+        workspaceMode: selectedWorkspace,
+        theme: selectedTheme,
+        autoCheckUpdates: skipUpdates ? false : selectedAutoUpdates,
+        updateChannel: selectedChannel,
+        osIntegrationDismissed: true,
+      };
+      cleanup();
+      resolve(result);
+    }
+
+    setWorkspaceSelection(selectedWorkspace);
+    setThemeSelection(selectedTheme);
+    autoUpdates.checked = selectedAutoUpdates;
+    updateChannel.value = selectedChannel;
+    void refreshDefaultArchiverActionButton(osOpen);
+    goTo(0);
+
+    welcomeNext.addEventListener("click", onWelcomeNext);
+    welcomeSkip.addEventListener("click", onWelcomeSkip);
+    workspaceBack.addEventListener("click", onWorkspaceBack);
+    workspaceNext.addEventListener("click", onWorkspaceNext);
+    themeBack.addEventListener("click", onThemeBack);
+    themeNext.addEventListener("click", onThemeNext);
+    updatesBack.addEventListener("click", onUpdatesBack);
+    updatesNext.addEventListener("click", onUpdatesNext);
+    osBack.addEventListener("click", onOsBack);
+    osOpen.addEventListener("click", onOsOpen);
+    osNext.addEventListener("click", onOsNext);
+    autoUpdates.addEventListener("change", onAutoUpdatesChange);
+    updateChannel.addEventListener("change", onUpdateChannelChange);
+    workspaceButtons.forEach((btn) =>
+      btn.addEventListener("click", onWorkspaceSelect),
+    );
+    themeButtons.forEach((btn) => btn.addEventListener("click", onTheme));
+  });
+}

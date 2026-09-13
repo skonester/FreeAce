@@ -1,0 +1,287 @@
+import { invoke } from "@tauri-apps/api/core";
+
+/** Keep in sync with validation.rs is_allowed_method_switch / compress extras. */
+export const ALLOWED_METHOD_PREFIXES = [
+  "-mx",
+  "-m0=",
+  "-md",
+  "-mfb",
+  "-ms",
+  "-mmt",
+  "-mem=",
+  "-mhe=",
+  "-mtc=",
+  "-mta=",
+  "-mhc=",
+  "-mcu=",
+  "-mcl=",
+];
+
+/** Subset of validation.rs is_allowed_switch, plus extra rejects FreeAce owns. */
+const EXTRA_SHARED_RE = /^-(?:bt|bb[0-3]|slt)$/;
+const EXTRA_EXTRACT_ONLY = ["-y"];
+const EXTRA_COMPRESS_ONLY = ["-stl", "-slp", "-ssp", "-sse"];
+
+export type ExtraArgsContext = "compress" | "extract";
+
+export interface ArchivePathValidation {
+  path: string;
+  valid: boolean;
+  reason?: string;
+  identity?: string;
+}
+
+export type ProbeArchivePaths = (
+  paths: string[],
+  includeIdentity?: boolean,
+) => Promise<ArchivePathValidation[]>;
+
+const SWITCH_PATH_PREFIXES = ["-i", "-x", "-w", "-o"];
+export const MAX_ARCHIVE_PATHS = 4096;
+/** Keep in sync with `archive_detect.rs`; bound serialized IPC payloads too. */
+export const MAX_ARCHIVE_PATHS_IPC_BYTES = 4 * 1024 * 1024;
+
+function normalizePath(path: string): string {
+  // File names may legally start or end with whitespace. File-dialog and OS
+  // launch paths are already tokenized, so preserve them exactly.
+  return path;
+}
+
+function hasParentDirComponent(path: string): boolean {
+  return path.split(/[\\/]+/).some((segment) => segment === "..");
+}
+
+function switchContainsParentTraversal(arg: string): boolean {
+  const lower = arg.toLowerCase();
+  if (!SWITCH_PATH_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
+    return false;
+  }
+  const payload = arg.slice(2);
+  return payload
+    .split(/[!:@]/)
+    .some((segment) => hasParentDirComponent(segment));
+}
+
+/** Keep aligned with validation.rs is_allowed_method_switch. */
+function methodSwitchValueIsSafe(value: string): boolean {
+  return (
+    value.length > 0 &&
+    !value.includes("/") &&
+    !value.includes("\\") &&
+    !value.includes("..")
+  );
+}
+
+function isAllowedMethodSwitch(lower: string): boolean {
+  for (const prefix of ALLOWED_METHOD_PREFIXES) {
+    if (!lower.startsWith(prefix)) continue;
+    const rest = lower.slice(prefix.length);
+    if (prefix.endsWith("=")) {
+      return methodSwitchValueIsSafe(rest);
+    }
+    if (rest.length === 0) return true;
+    if (rest.startsWith("=")) return methodSwitchValueIsSafe(rest.slice(1));
+    if (rest.charCodeAt(0) >= 48 && rest.charCodeAt(0) <= 57) {
+      return methodSwitchValueIsSafe(rest);
+    }
+    return false;
+  }
+  return false;
+}
+
+export async function validateArchivePaths(
+  paths: string[],
+  includeIdentity = false,
+): Promise<ArchivePathValidation[]> {
+  const normalized = paths.map(normalizePath);
+  if (normalized.length > MAX_ARCHIVE_PATHS) {
+    return normalized.map((path) => ({
+      path,
+      valid: false,
+      reason: `At most ${MAX_ARCHIVE_PATHS} paths can be validated at once.`,
+    }));
+  }
+  const byPath = new Map<string, ArchivePathValidation>();
+  const toProbe = new Set<string>();
+
+  for (const path of normalized) {
+    if (!path) {
+      byPath.set(path, { path, valid: false, reason: "Path is empty." });
+      continue;
+    }
+    toProbe.add(path);
+  }
+
+  if (toProbe.size > 0) {
+    const probeList = [...toProbe];
+    const pathsJson = JSON.stringify(probeList);
+    if (
+      new TextEncoder().encode(pathsJson).byteLength >
+      MAX_ARCHIVE_PATHS_IPC_BYTES
+    ) {
+      return normalized.map((path) => ({
+        path,
+        valid: false,
+        reason: `The archive-path validation request exceeds the ${MAX_ARCHIVE_PATHS_IPC_BYTES / (1024 * 1024)} MiB safety limit.`,
+      }));
+    }
+    const probed = await invoke<ArchivePathValidation[]>(
+      "validate_archive_paths",
+      { pathsJson, ...(includeIdentity ? { includeIdentity: true } : {}) },
+    );
+    for (const result of probed) {
+      const normalizedPath = normalizePath(result.path);
+      const normalizedResult: ArchivePathValidation = {
+        path: normalizedPath,
+        valid: result.valid,
+        reason: result.reason,
+        identity: result.identity,
+      };
+      byPath.set(normalizedPath, normalizedResult);
+    }
+    for (const path of probeList) {
+      if (!byPath.has(path)) {
+        const fallback: ArchivePathValidation = {
+          path,
+          valid: false,
+          reason: "Validation returned no result.",
+        };
+        byPath.set(path, fallback);
+      }
+    }
+  }
+
+  return normalized.map((path) => {
+    const resolved = byPath.get(path);
+    if (resolved) return resolved;
+    return { path, valid: false, reason: "Validation unavailable." };
+  });
+}
+
+export function validateExtraArgs(
+  args: string[],
+  context: ExtraArgsContext,
+): void {
+  const blocked = ["-sdel", "-p", "-mhe", "-o", "-si", "-so", "-t", "-ssw"];
+
+  for (const arg of args) {
+    if (!arg.startsWith("-")) {
+      throw new Error(`Extra arguments must start with '-'. Invalid: ${arg}`);
+    }
+
+    const lower = arg.toLowerCase();
+    if (lower.startsWith("-i") || lower.startsWith("-x")) {
+      throw new Error(
+        `"${arg}" is not allowed. Extra args cannot expand 7-Zip include or exclude lists.`,
+      );
+    }
+    if (lower.startsWith("-ao")) {
+      throw new Error(
+        `"${arg}" is not allowed. FreeAce sets the safe extract overwrite policy (-aou / -aos) automatically; -aoa and -aot overwrite existing files.`,
+      );
+    }
+    if (lower.startsWith("-bs")) {
+      if (lower !== "-bsp1") {
+        throw new Error(
+          `"${arg}" is not allowed. Only -bsp1 progress output is permitted.`,
+        );
+      }
+      continue;
+    }
+    if (lower.startsWith("-mem=")) {
+      if (lower !== "-mem=aes256") {
+        throw new Error(
+          `"${arg}" is not allowed. Password-protected ZIP archives must use AES-256.`,
+        );
+      }
+    }
+    if (lower === "-r" || lower.startsWith("-r-") || lower === "-r0") {
+      throw new Error(
+        `"${arg}" is not allowed. Extra args cannot recurse from the working directory; FreeAce already passes concrete paths.`,
+      );
+    }
+    if (lower.startsWith("-scs") || lower.startsWith("-scc")) {
+      throw new Error(
+        `"${arg}" is not allowed. FreeAce forces UTF-8 console charset.`,
+      );
+    }
+    if (lower.startsWith("-mcu=") || lower.startsWith("-mcl=")) {
+      if (lower.endsWith("=off")) {
+        throw new Error(
+          `"${arg}" is not allowed. FreeAce forces UTF-8 ZIP names (-mcu=on).`,
+        );
+      }
+    }
+    if (blocked.some((b) => lower.startsWith(b))) {
+      throw new Error(
+        `"${arg}" is not allowed in extra args. Use the dedicated fields instead.`,
+      );
+    }
+
+    if (lower.startsWith("-m")) {
+      if (context !== "compress") {
+        throw new Error(`"${arg}" is not allowed for ${context} arguments.`);
+      }
+      if (!isAllowedMethodSwitch(lower)) {
+        throw new Error(
+          `"${arg}" is not an allowed compression method switch.`,
+        );
+      }
+    } else if (
+      EXTRA_SHARED_RE.test(lower) ||
+      (context === "extract" && EXTRA_EXTRACT_ONLY.includes(lower)) ||
+      (context === "compress" && EXTRA_COMPRESS_ONLY.includes(lower))
+    ) {
+      // Allowed for this command by validation.rs.
+    } else if (
+      (context === "compress" && EXTRA_EXTRACT_ONLY.includes(lower)) ||
+      (context === "extract" && EXTRA_COMPRESS_ONLY.includes(lower))
+    ) {
+      throw new Error(`"${arg}" is not allowed for ${context} arguments.`);
+    } else {
+      throw new Error(
+        `Unknown argument "${arg}". Only recognized 7z switches are allowed.`,
+      );
+    }
+
+    if (switchContainsParentTraversal(arg)) {
+      throw new Error(
+        `"${arg}" must not contain a '..' parent-directory segment.`,
+      );
+    }
+  }
+}
+
+export async function ensureArchivePaths(
+  paths: string[],
+  context: "browse" | "extract" | "test",
+  probe: ProbeArchivePaths = validateArchivePaths,
+  includeIdentity = false,
+): Promise<ArchivePathValidation[]> {
+  const normalized = paths.map(normalizePath).filter((path) => path.length > 0);
+  if (normalized.length === 0) return [];
+
+  let results: ArchivePathValidation[];
+  try {
+    results = await probe(normalized, includeIdentity);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Unable to validate selected inputs for ${context}: ${msg}`,
+    );
+  }
+  const invalid = results.filter((result) => !result.valid);
+  if (invalid.length === 0) return results;
+
+  const sample = invalid
+    .slice(0, 3)
+    .map(
+      (result) => `${result.path}${result.reason ? ` (${result.reason})` : ""}`,
+    )
+    .join(", ");
+  const more = invalid.length > 3 ? ` (+${invalid.length - 3} more)` : "";
+  const noun = invalid.length === 1 ? "input is" : "inputs are";
+  throw new Error(
+    `Only supported archive files can be used for ${context}. ${invalid.length} ${noun} invalid: ${sample}${more}`,
+  );
+}

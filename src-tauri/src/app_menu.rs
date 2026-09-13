@@ -1,0 +1,155 @@
+//! Native application menu (macOS menu bar).
+
+use tauri::AppHandle;
+
+static PENDING_MENU_ACTIONS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub fn flush_pending_menu_actions(app: &AppHandle) {
+    use tauri::{Emitter as _, Manager as _};
+
+    let Some(main) = app.get_webview_window("main") else {
+        return;
+    };
+    let pending = PENDING_MENU_ACTIONS
+        .lock()
+        .map(|mut actions| std::mem::take(&mut *actions))
+        .unwrap_or_default();
+    let mut pending = pending.into_iter();
+    while let Some(action) = pending.next() {
+        if main.emit("app-menu", &action).is_err() {
+            if let Ok(mut actions) = PENDING_MENU_ACTIONS.lock() {
+                actions.push(action);
+                actions.extend(pending);
+            }
+            break;
+        }
+    }
+}
+
+/// Install the macOS application menu and route custom items to the frontend.
+#[cfg(target_os = "macos")]
+pub fn install_macos_app_menu(app: &AppHandle) -> Result<(), String> {
+    use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
+    use tauri::{Emitter, Manager};
+
+    const MENU_CHECK_UPDATES: &str = "menu-check-updates";
+    const MENU_SETTINGS: &str = "menu-settings";
+    const MENU_SHORTCUTS: &str = "menu-shortcuts";
+    const MENU_LICENSES: &str = "menu-licenses";
+
+    let check_updates = MenuItem::with_id(
+        app,
+        MENU_CHECK_UPDATES,
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let settings = MenuItem::with_id(app, MENU_SETTINGS, "Settings…", true, Some("CmdOrCtrl+,"))
+        .map_err(|e| e.to_string())?;
+
+    let shortcuts = MenuItem::with_id(
+        app,
+        MENU_SHORTCUTS,
+        "Keyboard Shortcuts",
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let licenses = MenuItem::with_id(app, MENU_LICENSES, "Licenses", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+
+    let about = AboutMetadata {
+        name: Some("FreeAce".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
+        copyright: Some("© BurntToasters".into()),
+        ..Default::default()
+    };
+
+    let app_submenu = SubmenuBuilder::new(app, "FreeAce")
+        .about(Some(about))
+        .separator()
+        .item(&check_updates)
+        .separator()
+        .item(&settings)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let edit_submenu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let window_submenu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .bring_all_to_front()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let help_submenu = SubmenuBuilder::new(app, "Help")
+        .item(&shortcuts)
+        .separator()
+        .item(&licenses)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let _ = help_submenu.set_as_help_menu_for_nsapp();
+    let _ = window_submenu.set_as_windows_menu_for_nsapp();
+
+    let menu = MenuBuilder::new(app)
+        .item(&app_submenu)
+        .item(&edit_submenu)
+        .item(&window_submenu)
+        .item(&help_submenu)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+
+    app.on_menu_event(|app, event| {
+        let id = event.id().as_ref();
+        match id {
+            MENU_CHECK_UPDATES | MENU_SETTINGS | MENU_SHORTCUTS | MENU_LICENSES => {
+                if let Err(error) = crate::launch::show_main_window(app) {
+                    eprintln!("Failed to show main window for menu action: {error}");
+                }
+                let delivered = crate::launch::MAIN_WINDOW_READY
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    && app
+                        .get_webview_window("main")
+                        .is_some_and(|main| main.emit("app-menu", id).is_ok());
+                if !delivered {
+                    if let Ok(mut pending) = PENDING_MENU_ACTIONS.lock() {
+                        pending.push(id.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    });
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install_macos_app_menu(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}

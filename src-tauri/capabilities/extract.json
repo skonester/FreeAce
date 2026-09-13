@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/capabilities/2",
+  "identifier": "extract-window",
+  "description": "Permissions for extract-only windows",
+  "windows": ["extract-*"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "allow-run-7z",
+    "allow-cancel-7z",
+    "allow-run-freeace",
+    "allow-cancel-freeace",
+    "allow-validate-archive-paths",
+    "allow-get-extract-paths",
+    "allow-inspect-extract-destination",
+    "allow-close-extract-window",
+    "allow-open-path",
+    "allow-register-extract-open-path",
+    "allow-get-platform-info",
+    "allow-load-settings",
+    "allow-set-workspace-window-fx",
+    "allow-supports-workspace-window-fx"
+  ]
+}

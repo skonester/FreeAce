@@ -1,0 +1,716 @@
+//! Archive detection by magic bytes / TAR header, and extension-vs-header validation.
+
+use std::io::{Read, Seek, SeekFrom};
+
+const ARCHIVE_SIGNATURE_SCAN_BYTES: usize = 1024;
+/// Keep aligned with `src/archive-rules.ts` MAX_ARCHIVE_PATHS and the 7-Zip
+/// argument ceiling in `validation.rs`.
+const MAX_ARCHIVE_PATHS: usize = 4096;
+/// Keep aligned with `src/archive-rules.ts` MAX_ARCHIVE_PATHS_IPC_BYTES. The
+/// command accepts one JSON string so this check occurs before allocating a
+/// `Vec<String>` from an untrusted IPC request.
+const MAX_ARCHIVE_PATHS_IPC_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct ArchivePathValidation {
+    pub path: String,
+    pub valid: bool,
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+}
+
+fn expected_archive_family(lower_path: &str) -> Option<&'static str> {
+    if lower_path.ends_with(".7z") {
+        Some("7z")
+    } else if lower_path.ends_with(".zip") {
+        Some("zip")
+    } else if lower_path.ends_with(".rar") {
+        Some("rar")
+    } else if lower_path.ends_with(".tar") {
+        Some("tar")
+    } else if lower_path.ends_with(".gz") {
+        Some("gzip")
+    } else if lower_path.ends_with(".bz2") {
+        Some("bzip2")
+    } else if lower_path.ends_with(".xz") {
+        Some("xz")
+    } else if lower_path.ends_with(".freeace") || lower_path.ends_with(".tar.freeace") {
+        Some("freeace")
+    } else {
+        None
+    }
+}
+
+fn starts_with_bytes(bytes: &[u8], prefix: &[u8]) -> bool {
+    bytes.len() >= prefix.len() && &bytes[..prefix.len()] == prefix
+}
+
+pub fn detect_archive_signature(bytes: &[u8]) -> Option<&'static str> {
+    if starts_with_bytes(bytes, &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]) {
+        return Some("7z");
+    }
+    if starts_with_bytes(bytes, &[0x50, 0x4B, 0x03, 0x04])
+        || starts_with_bytes(bytes, &[0x50, 0x4B, 0x05, 0x06])
+        || starts_with_bytes(bytes, &[0x50, 0x4B, 0x07, 0x08])
+    {
+        return Some("zip");
+    }
+    if starts_with_bytes(bytes, &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00])
+        || starts_with_bytes(bytes, &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00])
+    {
+        return Some("rar");
+    }
+    if starts_with_bytes(bytes, &[0x1F, 0x8B]) {
+        return Some("gzip");
+    }
+    if starts_with_bytes(bytes, b"BZh") {
+        return Some("bzip2");
+    }
+    if starts_with_bytes(bytes, &[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]) {
+        return Some("xz");
+    }
+    // Gleipnir's `GEN_MAGIC` (0x414E4547 little-endian) is the literal ASCII
+    // bytes "GENA" on disk.
+    if starts_with_bytes(bytes, b"GENA") {
+        return Some("freeace");
+    }
+    None
+}
+
+fn parse_tar_octal_field(field: &[u8]) -> Option<u64> {
+    let end = field.iter().position(|b| *b == 0).unwrap_or(field.len());
+    let text = String::from_utf8_lossy(&field[..end]).trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    u64::from_str_radix(text.trim(), 8).ok()
+}
+
+fn is_valid_tar_typeflag(flag: u8) -> bool {
+    matches!(
+        flag,
+        0 | b'0'
+            | b'1'
+            | b'2'
+            | b'3'
+            | b'4'
+            | b'5'
+            | b'6'
+            | b'7'
+            | b'g'
+            | b'x'
+            | b'L'
+            | b'K'
+            | b'S'
+            | b'V'
+            | b'A'
+            | b'D'
+            | b'M'
+            | b'N'
+    )
+}
+
+fn is_ascii_printable_or_blank(field: &[u8]) -> bool {
+    field
+        .iter()
+        .all(|byte| *byte == 0 || *byte == b' ' || (0x21..=0x7E).contains(byte))
+}
+
+fn has_tar_checksum(bytes: &[u8]) -> bool {
+    if bytes.len() < 512 {
+        return false;
+    }
+
+    if !is_valid_tar_typeflag(bytes[156]) {
+        return false;
+    }
+    if !is_ascii_printable_or_blank(&bytes[0..100]) {
+        return false;
+    }
+    if parse_tar_octal_field(&bytes[124..136]).is_none() {
+        return false;
+    }
+    if parse_tar_octal_field(&bytes[136..148]).is_none() {
+        return false;
+    }
+
+    let stored = match parse_tar_octal_field(&bytes[148..156]) {
+        Some(value) => value,
+        None => return false,
+    };
+
+    let mut computed: u64 = 0;
+    for (index, byte) in bytes.iter().copied().take(512).enumerate() {
+        if (148..156).contains(&index) {
+            computed += 0x20;
+        } else {
+            computed += byte as u64;
+        }
+    }
+
+    computed == stored
+}
+
+pub fn has_tar_signature(bytes: &[u8]) -> bool {
+    if bytes.len() >= 1024 && bytes[..1024].iter().all(|byte| *byte == 0) {
+        return true;
+    }
+    if bytes.len() < 512 {
+        return false;
+    }
+    bytes.get(257..262) == Some(b"ustar") || has_tar_checksum(bytes)
+}
+
+pub fn path_has_tar_signature(path: &std::path::Path) -> Result<bool, String> {
+    read_probe_bytes(path, ARCHIVE_SIGNATURE_SCAN_BYTES).map(|bytes| has_tar_signature(&bytes))
+}
+
+fn read_probe_bytes_from_open_file(
+    file: &mut std::fs::File,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| error.to_string())?;
+    let mut buf = vec![0u8; max_bytes];
+    let read = file.read(&mut buf).map_err(|e| e.to_string())?;
+    buf.truncate(read);
+    Ok(buf)
+}
+
+fn read_probe_bytes(path: &std::path::Path, max_bytes: usize) -> Result<Vec<u8>, String> {
+    let mut file = crate::path_safety::open_regular_file_nofollow(path)?;
+    read_probe_bytes_from_open_file(&mut file, max_bytes)
+}
+
+/// ZIP self-extracting archives may contain an arbitrary executable preamble,
+/// so the first local-file header is not necessarily near byte zero. Validate
+/// the mandatory end-of-central-directory record from the tail instead.
+fn has_zip_end_record_from_open_file(file: &mut std::fs::File) -> Result<bool, String> {
+    const MAX_EOCD_SEARCH: u64 = 65_535 + 22;
+    let len = file.metadata().map_err(|error| error.to_string())?.len();
+    let start = len.saturating_sub(MAX_EOCD_SEARCH);
+    file.seek(SeekFrom::Start(start))
+        .map_err(|error| error.to_string())?;
+    let mut tail = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut tail)
+        .map_err(|error| error.to_string())?;
+    if tail.len() < 22 {
+        return Ok(false);
+    }
+    for offset in (0..=tail.len() - 22).rev() {
+        if tail[offset..offset + 4] != [0x50, 0x4b, 0x05, 0x06] {
+            continue;
+        }
+        let comment_len = u16::from_le_bytes([tail[offset + 20], tail[offset + 21]]) as usize;
+        if offset + 22 + comment_len == tail.len() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn extension_mismatch_reason(expected: &str, detected: Option<&str>, tar: bool) -> String {
+    if expected == "tar" && tar {
+        return String::new();
+    }
+
+    match detected {
+        Some(kind) => format!("Extension indicates {expected} but header appears to be {kind}."),
+        None => format!("Extension indicates {expected} but the archive header is unrecognized."),
+    }
+}
+
+fn resolve_ascii_case_insensitive_sibling(
+    expected: &std::path::Path,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let parent = expected
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let expected_name = expected
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Archive volume has an invalid file name.".to_string())?;
+    let mut matched = None;
+    for entry in std::fs::read_dir(parent).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case(expected_name) {
+            continue;
+        }
+        if matched.is_some() {
+            return Err(format!(
+                "Archive volume name is ambiguous when matched case-insensitively: {}",
+                expected.display()
+            ));
+        }
+        matched = Some(entry.path());
+    }
+    Ok(matched)
+}
+
+fn validate_archive_path_impl(path: &str, include_identity: bool) -> ArchivePathValidation {
+    let candidate = path;
+
+    let invalid = |reason: &str| ArchivePathValidation {
+        path: candidate.to_string(),
+        valid: false,
+        reason: Some(reason.to_string()),
+        identity: None,
+    };
+
+    if candidate.is_empty() {
+        return invalid("Path is empty.");
+    }
+    if candidate.contains('\0') {
+        return invalid("Path contains invalid characters.");
+    }
+    if candidate.len() > 4096 {
+        return invalid("Path exceeds maximum length.");
+    }
+
+    let lower = candidate.to_lowercase();
+    let selected_path = std::path::Path::new(candidate);
+
+    let meta = match std::fs::symlink_metadata(selected_path) {
+        Ok(meta) => meta,
+        Err(err) => {
+            let reason = if err.kind() == std::io::ErrorKind::NotFound {
+                "File does not exist.".to_string()
+            } else {
+                format!("Unable to read file metadata: {}", err)
+            };
+            return ArchivePathValidation {
+                path: candidate.to_string(),
+                valid: false,
+                reason: Some(reason),
+                identity: None,
+            };
+        }
+    };
+    if !meta.is_file() && !crate::path_safety::is_link_or_reparse(&meta) {
+        return invalid("Path is not a file.");
+    }
+
+    let resolved_path = match crate::path_safety::resolve_regular_file_input(selected_path) {
+        Ok(path) => path,
+        Err(error) => return invalid(&error),
+    };
+    let fs_path = resolved_path.as_path();
+
+    let mut selected_file = match crate::path_safety::open_regular_file_nofollow(fs_path) {
+        Ok(file) => file,
+        Err(err) => {
+            return ArchivePathValidation {
+                path: candidate.to_string(),
+                valid: false,
+                reason: Some(format!("Unable to open file contents safely: {err}")),
+                identity: None,
+            };
+        }
+    };
+    let bytes =
+        match read_probe_bytes_from_open_file(&mut selected_file, ARCHIVE_SIGNATURE_SCAN_BYTES) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                return ArchivePathValidation {
+                    path: candidate.to_string(),
+                    valid: false,
+                    reason: Some(format!("Unable to read file contents: {}", err)),
+                    identity: None,
+                };
+            }
+        };
+
+    let signature = detect_archive_signature(&bytes);
+    let tar = has_tar_signature(&bytes);
+    let zip_end_record = has_zip_end_record_from_open_file(&mut selected_file).unwrap_or(false);
+
+    let split_zip_header_valid = || {
+        let base = fs_path.with_extension("");
+        let first = std::path::PathBuf::from(format!("{}.z01", base.to_string_lossy()));
+        let Ok(Some(first)) = resolve_ascii_case_insensitive_sibling(&first) else {
+            return false;
+        };
+        let Ok(metadata) = std::fs::symlink_metadata(&first) else {
+            return false;
+        };
+        if crate::path_safety::is_link_or_reparse(&metadata) || !metadata.is_file() {
+            return false;
+        }
+        read_probe_bytes(&first, ARCHIVE_SIGNATURE_SCAN_BYTES)
+            .ok()
+            .is_some_and(|probe| detect_archive_signature(&probe) == Some("zip"))
+    };
+
+    let valid = match expected_archive_family(&lower) {
+        Some("7z") => signature == Some("7z"),
+        Some("zip") => signature == Some("zip") || zip_end_record || split_zip_header_valid(),
+        Some("rar") => signature == Some("rar"),
+        Some("gzip") => signature == Some("gzip"),
+        Some("bzip2") => signature == Some("bzip2"),
+        Some("xz") => signature == Some("xz"),
+        Some("freeace") => signature == Some("freeace"),
+        Some("tar") => tar,
+        _ => signature.is_some() || tar,
+    };
+
+    if valid {
+        let identity = if include_identity {
+            match crate::process::archive_identity_token_from_open_file(fs_path, &selected_file) {
+                Ok(identity) => Some(identity),
+                Err(error) => {
+                    return ArchivePathValidation {
+                        path: candidate.to_string(),
+                        valid: false,
+                        reason: Some(format!(
+                            "Archive identity could not be established safely: {error}"
+                        )),
+                        identity: None,
+                    };
+                }
+            }
+        } else {
+            None
+        };
+        return ArchivePathValidation {
+            path: candidate.to_string(),
+            valid: true,
+            reason: None,
+            identity,
+        };
+    }
+
+    let expected = expected_archive_family(&lower);
+    let reason = match expected {
+        Some(kind) => {
+            let mismatch = extension_mismatch_reason(kind, signature, tar);
+            if mismatch.is_empty() {
+                "Archive header could not be validated.".to_string()
+            } else {
+                mismatch
+            }
+        }
+        None => "File does not look like a supported archive.".to_string(),
+    };
+
+    ArchivePathValidation {
+        path: candidate.to_string(),
+        valid: false,
+        reason: Some(reason),
+        identity: None,
+    }
+}
+
+pub fn validate_archive_path(path: &str) -> ArchivePathValidation {
+    validate_archive_path_impl(path, false)
+}
+
+fn validate_archive_paths_blocking(
+    paths_json: String,
+    include_identity: bool,
+) -> Result<Vec<ArchivePathValidation>, String> {
+    if paths_json.len() > MAX_ARCHIVE_PATHS_IPC_BYTES {
+        return Err(format!(
+            "Archive-path validation request exceeds the {} MiB safety limit.",
+            MAX_ARCHIVE_PATHS_IPC_BYTES / (1024 * 1024)
+        ));
+    }
+    let paths: Vec<String> = serde_json::from_str(&paths_json).map_err(|_| {
+        "Archive-path validation request must be a JSON array of paths.".to_string()
+    })?;
+    if paths.len() > MAX_ARCHIVE_PATHS {
+        return Err(format!(
+            "At most {MAX_ARCHIVE_PATHS} paths can be validated at once."
+        ));
+    }
+    Ok(paths
+        .into_iter()
+        .map(|path| validate_archive_path_impl(&path, include_identity))
+        .collect())
+}
+
+#[tauri::command]
+pub async fn validate_archive_paths(
+    paths_json: String,
+    include_identity: Option<bool>,
+) -> Result<Vec<ArchivePathValidation>, String> {
+    tokio::task::spawn_blocking(move || {
+        validate_archive_paths_blocking(paths_json, include_identity.unwrap_or(false))
+    })
+    .await
+    .map_err(|error| format!("Archive-path validation worker failed: {error}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_archive_signature_recognizes_known_headers() {
+        assert_eq!(
+            detect_archive_signature(&[0x50, 0x4B, 0x03, 0x04]),
+            Some("zip")
+        );
+        assert_eq!(
+            detect_archive_signature(&[0x50, 0x4B, 0x07, 0x08]),
+            Some("zip")
+        );
+        assert_eq!(detect_archive_signature(&[0x1F, 0x8B, 0x08]), Some("gzip"));
+        assert_eq!(
+            detect_archive_signature(&[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]),
+            Some("rar")
+        );
+        assert_eq!(detect_archive_signature(b"plain-text"), None);
+        assert_eq!(detect_archive_signature(b"GENA anything after"), Some("freeace"));
+    }
+
+    #[test]
+    fn expected_archive_family_recognizes_freeace_extensions() {
+        assert_eq!(expected_archive_family("archive.freeace"), Some("freeace"));
+        assert_eq!(
+            expected_archive_family("archive.tar.freeace"),
+            Some("freeace")
+        );
+    }
+
+    #[test]
+    fn accepts_rar_signature_on_every_platform() {
+        let path = std::env::temp_dir().join(format!(
+            "freeace-rar-validation-{}-{}.rar",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::write(&path, b"Rar!\x1a\x07\x01\0payload").expect("RAR fixture");
+
+        let result = validate_archive_path(&path.to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+
+        assert!(result.valid, "{:?}", result.reason);
+    }
+
+    #[test]
+    fn validate_archive_paths_rejects_oversized_batches() {
+        let paths_json = serde_json::to_string(&vec![String::new(); MAX_ARCHIVE_PATHS + 1])
+            .expect("test paths should serialize");
+        let result = validate_archive_paths_blocking(paths_json, false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("At most 4096 paths"));
+    }
+
+    #[test]
+    fn validation_rejects_oversized_ipc_payload_before_json_deserialization() {
+        let result =
+            validate_archive_paths_blocking("x".repeat(MAX_ARCHIVE_PATHS_IPC_BYTES + 1), false);
+        assert!(result.is_err_and(|error| error.contains("safety limit")));
+    }
+
+    #[test]
+    fn has_tar_signature_accepts_checksum_valid_block() {
+        let mut block = [0u8; 512];
+        block[0..8].copy_from_slice(b"file.txt");
+        block[124..136].copy_from_slice(b"00000000000\0");
+        block[136..148].copy_from_slice(b"00000000000\0");
+        block[156] = b'0';
+        for byte in &mut block[148..156] {
+            *byte = b' ';
+        }
+        let checksum: u64 = block.iter().map(|b| *b as u64).sum();
+        let checksum_field = format!("{:06o}\0 ", checksum);
+        block[148..156].copy_from_slice(checksum_field.as_bytes());
+
+        assert!(has_tar_signature(&block));
+    }
+
+    #[test]
+    fn has_tar_signature_rejects_invalid_typeflag() {
+        let mut block = [0u8; 512];
+        block[0..8].copy_from_slice(b"file.txt");
+        block[124..136].copy_from_slice(b"00000000000\0");
+        block[136..148].copy_from_slice(b"00000000000\0");
+        block[156] = 0xFF;
+        for byte in &mut block[148..156] {
+            *byte = b' ';
+        }
+        let checksum: u64 = block.iter().map(|b| *b as u64).sum();
+        let checksum_field = format!("{:06o}\0 ", checksum);
+        block[148..156].copy_from_slice(checksum_field.as_bytes());
+
+        assert!(!has_tar_signature(&block));
+    }
+
+    #[test]
+    fn has_tar_signature_accepts_the_standard_empty_archive() {
+        assert!(has_tar_signature(&[0; 1024]));
+    }
+
+    #[test]
+    fn validate_archive_path_accepts_extensionless_zip_signature() {
+        let base = std::env::temp_dir().join(format!(
+            "freeace-archive-probe-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("temp directory should be created");
+        let file_path = base.join("archive-without-extension");
+        std::fs::write(&file_path, [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00])
+            .expect("probe file should be written");
+
+        let path = file_path.to_string_lossy().to_string();
+        assert!(validate_archive_path(&path).valid);
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_archive_path_accepts_filesystem_symlink_input() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join(format!(
+            "freeace-archive-symlink-probe-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("temp directory");
+        let real = base.join("real.zip");
+        std::fs::write(&real, [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00]).expect("zip probe");
+        let linked = base.join("linked.zip");
+        symlink("real.zip", &linked).expect("archive symlink");
+
+        let result = validate_archive_path(&linked.to_string_lossy());
+        assert!(result.valid, "{:?}", result.reason);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn validate_archive_path_rejects_mislabeled_zip_file() {
+        let base = std::env::temp_dir().join(format!(
+            "freeace-archive-probe-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("temp directory should be created");
+        let file_path = base.join("not-an-archive.zip");
+        std::fs::write(&file_path, b"this is plain text").expect("probe file should be written");
+
+        let path = file_path.to_string_lossy().to_string();
+        let result = validate_archive_path(&path);
+        assert!(!result.valid);
+        assert!(result
+            .reason
+            .unwrap_or_default()
+            .contains("Extension indicates zip"));
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn validate_archive_path_accepts_zip_with_an_executable_preamble() {
+        let base = std::env::temp_dir().join(format!(
+            "freeace-sfx-zip-probe-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("temp directory should be created");
+        let file_path = base.join("self-extracting.zip");
+        let mut bytes = vec![b'M', b'Z'];
+        bytes.extend(std::iter::repeat_n(0u8, 2_048));
+        bytes.extend_from_slice(&[
+            0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+        std::fs::write(&file_path, bytes).expect("probe file should be written");
+
+        assert!(validate_archive_path(&file_path.to_string_lossy()).valid);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn validate_archive_path_accepts_split_zip_from_first_volume_header() {
+        let base = std::env::temp_dir().join(format!(
+            "freeace-split-zip-probe-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("temp directory should be created");
+        let first = base.join("archive.z01");
+        let final_volume = base.join("archive.zip");
+        std::fs::write(&first, [0x50, 0x4B, 0x07, 0x08, 0x14, 0x00])
+            .expect("first volume should be written");
+        std::fs::write(&final_volume, b"continuation bytes")
+            .expect("final volume should be written");
+
+        assert!(validate_archive_path(&final_volume.to_string_lossy()).valid);
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn validate_archive_path_accepts_uppercase_split_zip_volume() {
+        let base = std::env::temp_dir().join(format!(
+            "freeace-uppercase-split-zip-probe-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("temp directory should be created");
+        let first = base.join("archive.Z01");
+        let final_volume = base.join("archive.ZIP");
+        std::fs::write(&first, [0x50, 0x4B, 0x07, 0x08, 0x14, 0x00])
+            .expect("first volume should be written");
+        std::fs::write(&final_volume, b"continuation bytes")
+            .expect("final volume should be written");
+
+        assert!(validate_archive_path(&final_volume.to_string_lossy()).valid);
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn zips_fixtures_match_detector_allowlist() {
+        let zips = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../zips")
+            .canonicalize()
+            .expect("zips/ fixture directory");
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(zips.join("manifest.json")).expect("zips/manifest.json"),
+        )
+        .expect("manifest json");
+        for entry in manifest["extract"].as_array().expect("extract list") {
+            let file = entry["file"].as_str().expect("file");
+            let path = zips.join(file);
+            let result = validate_archive_path(&path.to_string_lossy());
+            assert!(
+                result.valid,
+                "{file} should be a supported archive: {:?}",
+                result.reason
+            );
+        }
+        for entry in manifest["negative"].as_array().expect("negative list") {
+            let file = entry["file"].as_str().expect("file");
+            let detect = entry["detect"].as_bool().expect("detect");
+            let result = validate_archive_path(&zips.join(file).to_string_lossy());
+            assert_eq!(
+                result.valid, detect,
+                "{file} detect={}, reason={:?}",
+                detect, result.reason
+            );
+        }
+    }
+}

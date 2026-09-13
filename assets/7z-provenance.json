@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "product": "7-Zip",
+  "version": "26.03",
+  "recordedOn": "2026-09-05",
+  "officialDownloadPage": "https://www.7-zip.org/download.html",
+  "sourceArchives": {
+    "linux-arm64": {
+      "url": "https://www.7-zip.org/a/7z2603-linux-arm64.tar.xz",
+      "sha256": "2389ba20e4d8295e8709c20b6263b69bd1ec4972fe38a04ad7a1badbf595b996"
+    },
+    "linux-x64": {
+      "url": "https://www.7-zip.org/a/7z2603-linux-x64.tar.xz",
+      "sha256": "dc99eff5008f1ab79bd7084c68513701547a808a89502bf4133683535ab3c695"
+    },
+    "mac": {
+      "url": "https://www.7-zip.org/a/7z2603-mac.tar.xz",
+      "sha256": "5ca87677072c59f5602e5c49baa27d4694bacd2259b4e507f0094249d4281480"
+    },
+    "windows-arm64-installer": {
+      "url": "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-arm64.exe",
+      "sha256": "e22ce71c11dcf503c448fe51e56f41830eb4e1344fa5c7731ae63bce533a8e8e"
+    },
+    "windows-x64-installer": {
+      "url": "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe",
+      "sha256": "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd"
+    }
+  },
+  "licenseNotices": {
+    "7ZIP_LICENSE_LINUX_MACOS.txt": {
+      "source": "linux-x64",
+      "member": "License.txt",
+      "normalization": "LF",
+      "sha256": "d0c33d358dacc286e24ae69902cd86f084a81416155364b0d54eae6cd853e854"
+    },
+    "7ZIP_LICENSE_WINDOWS.txt": {
+      "source": "windows-x64-installer",
+      "member": "License.txt",
+      "normalization": "none",
+      "sha256": "519ac0a4bded9c18ea02e0afb71f663d8c47373bd9facd3ac96a79f51d77765d"
+    }
+  },
+  "artifacts": {
+    "linux/arm64/7zzs": {
+      "source": "linux-arm64",
+      "member": "7zzs"
+    },
+    "linux/x64/7zzs": {
+      "source": "linux-x64",
+      "member": "7zzs"
+    },
+    "mac/7zz": {
+      "source": "mac",
+      "member": "7zz"
+    },
+    "win/arm64/7z.dll": {
+      "source": "windows-arm64-installer",
+      "member": "7z.dll"
+    },
+    "win/arm64/7z.exe": {
+      "source": "windows-arm64-installer",
+      "member": "7z.exe"
+    },
+    "win/x64/7z.dll": {
+      "source": "windows-x64-installer",
+      "member": "7z.dll"
+    },
+    "win/x64/7z.exe": {
+      "source": "windows-x64-installer",
+      "member": "7z.exe"
+    }
+  }
+}

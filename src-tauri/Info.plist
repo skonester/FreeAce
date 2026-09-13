@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleShortVersionString</key>
+	<string>0.6.2</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>run.rosie.freeace.split-volume</string>
+			<key>UTTypeDescription</key>
+			<string>Split archive volume</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>001</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Extract with FreeAce</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>extractWithFreeAce</string>
+			<key>NSPortName</key>
+			<string>FreeAce</string>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSTextContent</key>
+				<string>FilePath</string>
+				<!-- Prefer Finder (must live inside NSRequiredContext). -->
+				<key>NSApplicationIdentifier</key>
+				<string>com.apple.finder</string>
+			</dict>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.archive</string>
+				<string>public.zip-archive</string>
+				<string>org.7-zip.7-zip-archive</string>
+				<string>public.tar-archive</string>
+				<string>org.gnu.gnu-zip-archive</string>
+				<string>org.gnu.gnu-zip-tar-archive</string>
+				<string>public.bzip2-archive</string>
+				<string>org.tukaani.xz-archive</string>
+				<string>com.pkware.zip-archive</string>
+				<string>com.rarlab.rar-archive</string>
+				<string>run.rosie.freeace.split-volume</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Compress with FreeAce</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>compressWithFreeAce</string>
+			<key>NSPortName</key>
+			<string>FreeAce</string>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSTextContent</key>
+				<string>FilePath</string>
+				<key>NSApplicationIdentifier</key>
+				<string>com.apple.finder</string>
+			</dict>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.item</string>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

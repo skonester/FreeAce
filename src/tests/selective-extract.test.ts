@@ -1,0 +1,597 @@
+import { describe, it, expect } from "vitest";
+import type { BrowseEntry } from "../browse-model";
+import {
+  buildSelectiveExtractArgs,
+  buildEntryTree,
+  computeNodeCheckState,
+  clearPathSelection,
+  detectWindowsMemberPaths,
+  filterBrowseEntriesByQuery,
+  isPathWithinFolder,
+  normalizeSelectiveSearchQuery,
+  resolveSelectiveExtractMemberPaths,
+  selectEntries,
+  selectPaths,
+  toggleEntrySelection,
+  togglePathSelection,
+  MAX_ARCHIVE_MEMBER_PATH_BYTES,
+  MAX_ARCHIVE_TREE_DEPTH,
+} from "../selective-extract";
+import type { TreeNode } from "../selective-extract";
+
+const SAMPLE_ENTRIES: BrowseEntry[] = [
+  {
+    path: "docs",
+    size: 0,
+    packedSize: 0,
+    modified: "2025-01-01 12:00:00",
+    isFolder: true,
+  },
+  {
+    path: "docs/readme.md",
+    size: 1024,
+    packedSize: 600,
+    modified: "2025-01-01 12:00:00",
+    isFolder: false,
+  },
+  {
+    path: "docs/guide/install.md",
+    size: 1536,
+    packedSize: 900,
+    modified: "2025-01-01 12:00:30",
+    isFolder: false,
+  },
+  {
+    path: "docs/guides",
+    size: 0,
+    packedSize: 0,
+    modified: "2025-01-01 12:01:00",
+    isFolder: true,
+  },
+  {
+    path: "src/main.ts",
+    size: 2048,
+    packedSize: 900,
+    modified: "2025-01-01 12:02:00",
+    isFolder: false,
+  },
+  {
+    path: "-leading-switch-name.txt",
+    size: 200,
+    packedSize: 100,
+    modified: "2025-01-01 12:03:00",
+    isFolder: false,
+  },
+];
+
+describe("filterBrowseEntriesByQuery", () => {
+  it("filters entries case-insensitively", () => {
+    const filtered = filterBrowseEntriesByQuery(SAMPLE_ENTRIES, "DOCS");
+    expect(filtered.length).toBe(4);
+    expect(filtered[0].path).toBe("docs");
+  });
+
+  it("returns all entries for empty query", () => {
+    expect(filterBrowseEntriesByQuery(SAMPLE_ENTRIES, "").length).toBe(
+      SAMPLE_ENTRIES.length,
+    );
+  });
+});
+
+describe("isPathWithinFolder", () => {
+  it("detects paths within folder (forward slash)", () => {
+    expect(isPathWithinFolder("docs/guide/install.md", "docs")).toBe(true);
+  });
+
+  it("detects paths within folder (backslash)", () => {
+    expect(isPathWithinFolder("docs\\guide\\install.md", "docs", true)).toBe(
+      true,
+    );
+  });
+
+  it("does not treat a POSIX literal backslash as a separator", () => {
+    expect(isPathWithinFolder("docs\\guide.txt", "docs")).toBe(false);
+  });
+
+  it("rejects paths outside folder", () => {
+    expect(isPathWithinFolder("src/main.ts", "docs")).toBe(false);
+  });
+});
+
+describe("togglePathSelection", () => {
+  it("adds path when not selected", () => {
+    const selected = togglePathSelection(new Set<string>(), "docs/readme.md");
+    expect(selected.has("docs/readme.md")).toBe(true);
+  });
+
+  it("removes path when already selected", () => {
+    const initial = new Set(["docs/readme.md"]);
+    const selected = togglePathSelection(initial, "docs/readme.md");
+    expect(selected.has("docs/readme.md")).toBe(false);
+  });
+});
+
+describe("selectPaths", () => {
+  it("adds multiple paths", () => {
+    const selected = selectPaths(new Set<string>(), [
+      "docs/readme.md",
+      "src/main.ts",
+    ]);
+    expect(selected.size).toBe(2);
+  });
+});
+
+describe("toggleEntrySelection", () => {
+  it("selects folder and all its children", () => {
+    const selected = toggleEntrySelection(
+      new Set<string>(),
+      SAMPLE_ENTRIES[0],
+      SAMPLE_ENTRIES,
+    );
+    expect(selected.has("docs")).toBe(true);
+    expect(selected.has("docs/readme.md")).toBe(true);
+    expect(selected.has("docs/guide/install.md")).toBe(true);
+  });
+
+  it("deselects folder and all its children", () => {
+    const initial = new Set([
+      "docs",
+      "docs/readme.md",
+      "docs/guide/install.md",
+      "docs/guides",
+      "src/main.ts",
+    ]);
+    const selected = toggleEntrySelection(
+      initial,
+      SAMPLE_ENTRIES[0],
+      SAMPLE_ENTRIES,
+    );
+    expect(selected.has("docs")).toBe(false);
+    expect(selected.has("docs/readme.md")).toBe(false);
+    expect(selected.has("docs/guide/install.md")).toBe(false);
+    expect(selected.has("src/main.ts")).toBe(true);
+  });
+});
+
+describe("selectEntries", () => {
+  it("selects given entries and their children", () => {
+    const selected = selectEntries(
+      new Set<string>(),
+      [SAMPLE_ENTRIES[3]],
+      SAMPLE_ENTRIES,
+    );
+    expect(selected.has("docs/guides")).toBe(true);
+  });
+
+  it("limits recursion to the filtered search scope", () => {
+    const visible = filterBrowseEntriesByQuery(SAMPLE_ENTRIES, "readme");
+    const selected = selectEntries(new Set<string>(), visible, visible);
+    expect([...selected]).toEqual(["docs/readme.md"]);
+    expect(selected.has("docs/guide/install.md")).toBe(false);
+  });
+
+  it("does not recurse into children omitted from a capped render scope", () => {
+    const entries: BrowseEntry[] = [
+      {
+        path: "big",
+        isFolder: true,
+        size: 0,
+        packedSize: 0,
+        modified: "",
+      },
+      {
+        path: "big/hidden.txt",
+        isFolder: false,
+        size: 1,
+        packedSize: 1,
+        modified: "",
+      },
+    ];
+    const scope = [entries[0]];
+    const selected = selectEntries(new Set(), scope, scope, false);
+    expect(selected.has("big")).toBe(true);
+    expect(selected.has("big/hidden.txt")).toBe(false);
+  });
+});
+
+describe("detectWindowsMemberPaths", () => {
+  it("prefers backslash listings over host OS assumptions", () => {
+    expect(
+      detectWindowsMemberPaths([
+        {
+          path: "docs\\readme.md",
+          size: 1,
+          packedSize: 1,
+          modified: "",
+          isFolder: false,
+        },
+        {
+          path: "docs\\guide\\install.md",
+          size: 1,
+          packedSize: 1,
+          modified: "",
+          isFolder: false,
+        },
+      ]),
+    ).toBe(true);
+  });
+
+  it("keeps forward-slash archives on POSIX semantics", () => {
+    expect(detectWindowsMemberPaths(SAMPLE_ENTRIES)).toBe(false);
+  });
+
+  it("builds a Windows-style tree from backslash member paths", () => {
+    const tree = buildEntryTree(
+      [
+        {
+          path: "docs",
+          size: 0,
+          packedSize: 0,
+          modified: "",
+          isFolder: true,
+        },
+        {
+          path: "docs\\readme.md",
+          size: 1,
+          packedSize: 1,
+          modified: "",
+          isFolder: false,
+        },
+      ],
+      true,
+    );
+    expect(tree[0]?.children.map((child) => child.path)).toEqual([
+      "docs\\readme.md",
+    ]);
+  });
+});
+
+describe("clearPathSelection", () => {
+  it("returns empty set", () => {
+    expect(clearPathSelection().size).toBe(0);
+  });
+});
+
+describe("resolveSelectiveExtractMemberPaths", () => {
+  it("omits non-empty folders so 7z cannot expand past the selection", () => {
+    expect(
+      resolveSelectiveExtractMemberPaths(
+        ["docs", "docs/readme.md"],
+        SAMPLE_ENTRIES,
+      ),
+    ).toEqual(["docs/readme.md"]);
+  });
+
+  it("keeps empty folders so 7z can create them", () => {
+    const entries: BrowseEntry[] = [
+      {
+        path: "empty",
+        size: 0,
+        packedSize: 0,
+        modified: "2025-01-01 12:00:00",
+        isFolder: true,
+      },
+    ];
+    expect(resolveSelectiveExtractMemberPaths(["empty"], entries)).toEqual([
+      "empty",
+    ]);
+  });
+
+  it("does not extract hidden siblings when only a search-hit folder is selected", () => {
+    expect(
+      resolveSelectiveExtractMemberPaths(["docs"], SAMPLE_ENTRIES),
+    ).toEqual([]);
+  });
+});
+
+describe("buildEntryTree", () => {
+  it("keeps archive-native leaf paths when separators are mixed", () => {
+    const entries = [
+      {
+        path: "docs\\a.txt",
+        isFolder: false,
+        size: 1,
+        packedSize: 1,
+        modified: "",
+      },
+      {
+        path: "docs/b.txt",
+        isFolder: false,
+        size: 1,
+        packedSize: 1,
+        modified: "",
+      },
+    ];
+    const tree = buildEntryTree(entries, true);
+    const docs = tree.find(
+      (node) => node.path === "docs" || node.name === "docs",
+    );
+    expect(docs?.children.map((child) => child.path).sort()).toEqual([
+      "docs/b.txt",
+      "docs\\a.txt",
+    ]);
+  });
+});
+
+describe("buildSelectiveExtractArgs", () => {
+  it("builds correct args with selected paths", () => {
+    expect(
+      buildSelectiveExtractArgs(
+        "/tmp/archive.7z",
+        "/tmp/output",
+        "secret",
+        ["-aos"],
+        ["docs/readme.md", "src/main.ts"],
+      ),
+    ).toEqual([
+      "x",
+      "-o/tmp/output",
+      "-aou",
+      "-bb1",
+      "-spd",
+      "-bsp1",
+      "-psecret",
+      "-aos",
+      "--",
+      "/tmp/archive.7z",
+      "docs/readme.md",
+      "src/main.ts",
+    ]);
+  });
+
+  it("uses -- separator to prevent switch-like path injection", () => {
+    expect(
+      buildSelectiveExtractArgs(
+        "/tmp/archive.7z",
+        "/tmp/output",
+        "",
+        [],
+        ["-leading-switch-name.txt"],
+      ),
+    ).toEqual([
+      "x",
+      "-o/tmp/output",
+      "-aou",
+      "-bb1",
+      "-spd",
+      "-bsp1",
+      "--",
+      "/tmp/archive.7z",
+      "-leading-switch-name.txt",
+    ]);
+  });
+
+  it("extracts everything when no paths selected", () => {
+    expect(
+      buildSelectiveExtractArgs("/tmp/archive.7z", "/tmp/output", "", [], []),
+    ).toEqual([
+      "x",
+      "-o/tmp/output",
+      "-aou",
+      "-bb1",
+      "-spd",
+      "-bsp1",
+      "--",
+      "/tmp/archive.7z",
+    ]);
+  });
+});
+
+describe("normalizeSelectiveSearchQuery", () => {
+  it("trims whitespace and lowercases", () => {
+    expect(normalizeSelectiveSearchQuery("  MyQuery  ")).toBe("myquery");
+  });
+
+  it("converts uppercase to lowercase", () => {
+    expect(normalizeSelectiveSearchQuery("README")).toBe("readme");
+  });
+
+  it("returns empty string for blank input", () => {
+    expect(normalizeSelectiveSearchQuery("   ")).toBe("");
+  });
+
+  it("returns empty string for empty string", () => {
+    expect(normalizeSelectiveSearchQuery("")).toBe("");
+  });
+
+  it("handles mixed case and whitespace", () => {
+    expect(normalizeSelectiveSearchQuery("\tDocs/Guide\n")).toBe("docs/guide");
+  });
+
+  it("compares Unicode search terms in NFC", () => {
+    const composed = "héllo";
+    const decomposed = "he\u0301llo";
+    expect(normalizeSelectiveSearchQuery(decomposed)).toBe(
+      normalizeSelectiveSearchQuery(composed),
+    );
+    expect(
+      filterBrowseEntriesByQuery(
+        [
+          {
+            path: composed,
+            size: 1,
+            packedSize: 1,
+            modified: "",
+            isFolder: false,
+          },
+        ],
+        decomposed,
+      ),
+    ).toHaveLength(1);
+  });
+});
+
+describe("buildEntryTree", () => {
+  function findNode(nodes: TreeNode[], path: string): TreeNode | undefined {
+    for (const node of nodes) {
+      if (node.path === path) return node;
+      const found = findNode(node.children, path);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  it("nests files under their folders", () => {
+    const tree = buildEntryTree(SAMPLE_ENTRIES);
+    const docs = findNode(tree, "docs");
+    expect(docs?.isFolder).toBe(true);
+    expect(findNode(tree, "docs/readme.md")?.isFolder).toBe(false);
+    expect(findNode(tree, "docs/guide/install.md")).toBeDefined();
+  });
+
+  it("synthesizes intermediate folders absent from the entry list", () => {
+    const tree = buildEntryTree([
+      {
+        path: "a/b/c.txt",
+        size: 1,
+        packedSize: 1,
+        modified: "",
+        isFolder: false,
+      },
+    ]);
+    const a = findNode(tree, "a");
+    expect(a?.isFolder).toBe(true);
+    expect(findNode(tree, "a/b")?.isFolder).toBe(true);
+  });
+
+  it("promotes a file node when a later entry makes it a parent", () => {
+    const tree = buildEntryTree([
+      {
+        path: "parent",
+        size: 4,
+        packedSize: 4,
+        modified: "",
+        isFolder: false,
+      },
+      {
+        path: "parent/child.txt",
+        size: 1,
+        packedSize: 1,
+        modified: "",
+        isFolder: false,
+      },
+    ]);
+    expect(tree[0].isFolder).toBe(true);
+    expect(tree[0].size).toBe(0);
+    expect(tree[0].children[0].path).toBe("parent/child.txt");
+  });
+
+  it("preserves a literal POSIX backslash member as one leaf", () => {
+    const tree = buildEntryTree([
+      {
+        path: "a\\b.txt",
+        size: 1,
+        packedSize: 1,
+        modified: "",
+        isFolder: false,
+      },
+    ]);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].path).toBe("a\\b.txt");
+    expect(tree[0].name).toBe("a\\b.txt");
+  });
+
+  it("sorts folders before files alphabetically", () => {
+    const tree = buildEntryTree(SAMPLE_ENTRIES);
+    const topNames = tree.map((n) => n.name);
+    const docsIdx = topNames.indexOf("docs");
+    const fileIdx = topNames.indexOf("-leading-switch-name.txt");
+    expect(docsIdx).toBeLessThan(fileIdx);
+  });
+
+  it("rejects hostile member depth before recursive UI rendering", () => {
+    const path = Array.from(
+      { length: MAX_ARCHIVE_TREE_DEPTH + 1 },
+      (_, index) => `d${index}`,
+    ).join("/");
+    expect(() =>
+      buildEntryTree([
+        {
+          path,
+          size: 1,
+          packedSize: 1,
+          modified: "",
+          isFolder: false,
+        },
+      ]),
+    ).toThrow(/256-level browsing limit/);
+  });
+
+  it("rejects member paths over the backend UTF-8 byte limit", () => {
+    expect(() =>
+      buildEntryTree([
+        {
+          path: "é".repeat(MAX_ARCHIVE_MEMBER_PATH_BYTES / 2 + 1),
+          size: 1,
+          packedSize: 1,
+          modified: "",
+          isFolder: false,
+        },
+      ]),
+    ).toThrow(/8192-byte browsing limit/);
+  });
+});
+
+describe("computeNodeCheckState", () => {
+  it("returns checked when all descendant files are selected", () => {
+    const tree = buildEntryTree(SAMPLE_ENTRIES);
+    const docs = tree.find((n) => n.path === "docs")!;
+    const selected = new Set([
+      "docs/readme.md",
+      "docs/guide/install.md",
+      "docs/guides",
+    ]);
+    expect(computeNodeCheckState(docs, selected)).toBe("checked");
+  });
+
+  it("returns indeterminate when some descendants are selected", () => {
+    const tree = buildEntryTree(SAMPLE_ENTRIES);
+    const docs = tree.find((n) => n.path === "docs")!;
+    const selected = new Set(["docs/readme.md"]);
+    expect(computeNodeCheckState(docs, selected)).toBe("indeterminate");
+  });
+
+  it("returns unchecked when nothing is selected", () => {
+    const tree = buildEntryTree(SAMPLE_ENTRIES);
+    const docs = tree.find((n) => n.path === "docs")!;
+    expect(computeNodeCheckState(docs, new Set())).toBe("unchecked");
+  });
+
+  it("reflects an empty folder's own selected state", () => {
+    const emptyFolder: TreeNode = {
+      name: "empty",
+      path: "empty",
+      isFolder: true,
+      size: 0,
+      depth: 0,
+      children: [],
+    };
+    expect(computeNodeCheckState(emptyFolder, new Set(["empty"]))).toBe(
+      "checked",
+    );
+    expect(computeNodeCheckState(emptyFolder, new Set())).toBe("unchecked");
+  });
+
+  it("includes selected nested childless folders in parent state", () => {
+    const tree = buildEntryTree(SAMPLE_ENTRIES);
+    const docs = tree.find((node) => node.path === "docs")!;
+
+    expect(computeNodeCheckState(docs, new Set(["docs/guides"]))).toBe(
+      "indeterminate",
+    );
+    expect(
+      computeNodeCheckState(
+        docs,
+        new Set(["docs/readme.md", "docs/guide/install.md", "docs/guides"]),
+      ),
+    ).toBe("checked");
+  });
+
+  it("reflects a single file's own state", () => {
+    const tree = buildEntryTree(SAMPLE_ENTRIES);
+    const src = tree.find((n) => n.path === "src")!;
+    const file = src.children[0];
+    expect(computeNodeCheckState(file, new Set([file.path]))).toBe("checked");
+    expect(computeNodeCheckState(file, new Set())).toBe("unchecked");
+  });
+});

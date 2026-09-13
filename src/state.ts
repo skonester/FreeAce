@@ -1,0 +1,105 @@
+import { $ } from "./utils";
+import { SETTING_DEFAULTS, UserSettings } from "./settings-model";
+import type { ArchiveInfo } from "./browse-model";
+
+export { SETTING_DEFAULTS };
+export type { UserSettings };
+
+const MAX_CACHED_ARCHIVES = 10;
+
+export type InputValidationState = "unknown" | "valid" | "invalid";
+
+export interface InputValidationInfo {
+  state: InputValidationState;
+  reason?: string;
+  reasonShort?: string;
+}
+
+export type QuickActionMode = "add" | "extract" | "browse";
+export type LastQuickActionByMode = Partial<Record<QuickActionMode, string>>;
+
+/** Evict one coordinated browse entry so identity/info/selection stay aligned. */
+function evictOldestBrowseCache(newKey: string): void {
+  const maps = [
+    state.browseArchiveInfoByPath,
+    state.browseArchiveIdentityByPath,
+    state.browseSelectionsByArchive,
+  ] as const;
+  if (maps.some((map) => map.has(newKey))) return;
+  while (maps.some((map) => map.size >= MAX_CACHED_ARCHIVES)) {
+    const oldest =
+      state.browseArchiveInfoByPath.keys().next().value ??
+      state.browseArchiveIdentityByPath.keys().next().value ??
+      state.browseSelectionsByArchive.keys().next().value;
+    if (oldest === undefined || oldest === newKey) break;
+    clearBrowseCache(oldest);
+  }
+}
+
+export function cacheBrowseInfo(archive: string, info: ArchiveInfo): void {
+  evictOldestBrowseCache(archive);
+  state.browseArchiveInfoByPath.set(archive, info);
+}
+
+export function cacheBrowseIdentity(archive: string, identity: string): void {
+  evictOldestBrowseCache(archive);
+  state.browseArchiveIdentityByPath.set(archive, identity);
+}
+
+export function clearBrowseCache(archive: string): void {
+  state.browseArchiveInfoByPath.delete(archive);
+  state.browseArchiveIdentityByPath.delete(archive);
+  state.browseSelectionsByArchive.delete(archive);
+}
+
+export function cacheSelection(archive: string, set: Set<string>): void {
+  evictOldestBrowseCache(archive);
+  state.browseSelectionsByArchive.set(archive, set);
+}
+
+export const state = {
+  currentSettings: { ...SETTING_DEFAULTS } as UserSettings,
+  lastPersistedSettings: { ...SETTING_DEFAULTS } as UserSettings,
+  settingsExtras: {} as Record<string, unknown>,
+  inputs: [] as string[],
+  running: false,
+  operationPreparing: false,
+  incomingPathsApplying: false,
+  batchCancelled: false,
+  cancelRequested: false,
+  statusTimeout: undefined as number | undefined,
+  osIntegrationEnabled: false,
+  platformName: "",
+  appIsPackaged: false,
+  logDirectory: "",
+  lastAutoExtractDestination: null as string | null,
+  lastAutoOutputPath: null as string | null,
+  browseArchiveInfoByPath: new Map<string, ArchiveInfo>(),
+  browseArchiveIdentityByPath: new Map<string, string>(),
+  browseSelectionsByArchive: new Map<string, Set<string>>(),
+  selectiveSearchQuery: "",
+  selectiveActiveArchive: null as string | null,
+  selectiveOpenRequestId: 0,
+  selectiveVisiblePaths: [] as string[],
+  selectiveExpandedFolders: new Set<string>(),
+  inputValidationByPath: new Map<string, InputValidationInfo>(),
+  inputValidationRequestId: 0,
+  lastInputValidationMode: "add" as "add" | "extract" | "browse",
+  lastInputsSignature: "[]",
+  lastQuickActionByMode: {} as LastQuickActionByMode,
+};
+
+export const dom = {
+  inputList: $("input-list"),
+  logEl: $("log"),
+  statusEl: $("status"),
+  progressEl: $("progress"),
+  versionLabel: $("version-label"),
+  platformLabel: $("platform-label"),
+  appEl: $("app"),
+  gridEl: document.querySelector<HTMLElement>(".grid")!,
+  runBtn: $<HTMLButtonElement>("run-action"),
+  cancelBtn: $<HTMLButtonElement>("cancel-action"),
+  extractRunBtn: $<HTMLButtonElement>("extract-run"),
+  extractCancelBtn: $<HTMLButtonElement>("extract-cancel"),
+};

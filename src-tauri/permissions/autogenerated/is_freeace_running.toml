@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-is-freeace-running"
+description = "Enables the is_freeace_running command without any pre-configured scope."
+commands.allow = ["is_freeace_running"]
+
+[[permission]]
+identifier = "deny-is-freeace-running"
+description = "Denies the is_freeace_running command without any pre-configured scope."
+commands.deny = ["is_freeace_running"]

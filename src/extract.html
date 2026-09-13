@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="theme-color"
+      content="#202020"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="theme-color"
+      content="#f3f3f3"
+      media="(prefers-color-scheme: light)"
+    />
+    <title>FreeAce: Extracting</title>
+    <link rel="stylesheet" href="/extract.css" />
+  </head>
+  <body>
+    <div id="titlebar" data-tauri-drag-region>
+      <div class="titlebar-logo" data-tauri-drag-region>
+        <img
+          src="/freeace_default-logo.png"
+          class="titlebar-icon"
+          data-tauri-drag-region
+          alt=""
+        />
+        <span class="titlebar-text" data-tauri-drag-region>FreeAce</span>
+      </div>
+      <div id="titlebar-controls">
+        <button class="titlebar-btn" id="titlebar-min" aria-label="Minimize">
+          <svg width="10" height="1" viewBox="0 0 10 1">
+            <rect width="10" height="1" fill="currentColor" />
+          </svg>
+        </button>
+        <button
+          class="titlebar-btn titlebar-btn--close"
+          id="titlebar-close"
+          aria-label="Close"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10">
+            <path
+              d="M0.5,0.5 L9.5,9.5 M9.5,0.5 L0.5,9.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <main id="extract-app" class="extract-app">
+      <div class="extract-header">
+        <img
+          src="/freeace_default-logo.png"
+          width="28"
+          height="28"
+          alt="FreeAce"
+          class="extract-logo"
+          draggable="false"
+        />
+        <h1>Extracting</h1>
+      </div>
+
+      <div class="extract-body">
+        <div class="extract-info">
+          <div class="extract-field">
+            <span class="extract-label">Archive</span>
+            <span class="extract-value extract-value--path" id="archive-name"
+              >-</span
+            >
+          </div>
+          <div class="extract-field">
+            <span class="extract-label">Destination</span>
+            <span class="extract-value extract-value--path" id="extract-dest"
+              >-</span
+            >
+          </div>
+        </div>
+
+        <div class="extract-progress-area">
+          <div
+            class="extract-progress-bar"
+            id="extract-progress"
+            role="progressbar"
+            aria-label="Extraction progress"
+            aria-valuenow="0"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <div class="extract-progress-fill" id="progress-fill"></div>
+          </div>
+          <div
+            class="extract-status"
+            id="extract-status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            Preparing...
+          </div>
+        </div>
+
+        <div class="extract-error" id="extract-error" role="alert" hidden>
+          <div class="extract-error-header">
+            <div class="extract-error-title">Extraction failed</div>
+            <button
+              type="button"
+              class="btn btn--ghost btn--sm"
+              id="copy-error-detail"
+              hidden
+            >
+              Copy details
+            </button>
+          </div>
+          <pre class="extract-error-detail" id="error-detail"></pre>
+        </div>
+      </div>
+
+      <div class="extract-footer">
+        <button class="btn" id="cancel-btn">Cancel</button>
+        <button class="btn btn--open" id="open-destination-btn" hidden>
+          Open destination
+        </button>
+        <button class="btn btn--close" id="close-btn" hidden>Close</button>
+      </div>
+    </main>
+
+    <div class="extract-input-modal-overlay" id="input-modal-overlay" hidden>
+      <div
+        class="modal extract-input-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="input-modal-title"
+      >
+        <div class="extract-input-modal__header">
+          <h2 id="input-modal-title">Input</h2>
+          <button
+            class="btn btn--ghost btn--sm"
+            id="input-modal-cancel-x"
+            aria-label="Cancel"
+          >
+            &times;
+          </button>
+        </div>
+        <div class="extract-input-modal__body">
+          <label class="extract-input-field">
+            <span id="input-modal-label">Value</span>
+            <input type="text" id="input-modal-field" autocomplete="off" />
+          </label>
+        </div>
+        <div class="extract-input-modal__footer">
+          <button class="btn btn--sm" id="input-modal-confirm">OK</button>
+          <button class="btn btn--ghost btn--sm" id="input-modal-cancel">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/extract-window.ts"></script>
+  </body>
+</html>

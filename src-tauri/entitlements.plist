@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- allow-jit: required for JavaScript JIT compilation in WKWebView -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Do not add allow-unsigned-executable-memory or disable-library-validation:
+         WKWebView uses Apple-signed system frameworks, and neither broad hardened-
+         runtime exception is required by FreeAce's executable 7z sidecar. -->
+    <!-- FreeAce is not App Sandbox-enabled, so updater network access needs no
+         App Sandbox networking entitlement. -->
+  </dict>
+</plist>

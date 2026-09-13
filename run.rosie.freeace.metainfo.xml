@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>run.rosie.freeace</id>
+  <name>FreeAce</name>
+  <summary>Cross-platform 7z + FreeAce GUI</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <developer id="run.rosie">
+    <name>BurntToasters</name>
+  </developer>
+  <description>
+    <p>
+      FreeAce is a fast, focused graphical front end for 7-Zip archives on
+      Windows, macOS, and Linux, with Basic and Power modes for everyday
+      extract, compress, browse, and convert workflows.
+    </p>
+  </description>
+  <launchable type="desktop-id">run.rosie.freeace.desktop</launchable>
+  <categories>
+    <category>Utility</category>
+    <category>Archiving</category>
+  </categories>
+  <url type="homepage">https://github.com/skonester/FreeAce</url>
+  <url type="bugtracker">https://github.com/skonester/FreeAce/issues</url>
+  <provides>
+    <mediatype>application/x-7z-compressed</mediatype>
+    <mediatype>application/x-freeace</mediatype>
+    <mediatype>application/zip</mediatype>
+    <mediatype>application/x-tar</mediatype>
+    <mediatype>application/gzip</mediatype>
+    <mediatype>application/x-compressed-tar</mediatype>
+    <mediatype>application/x-bzip2</mediatype>
+    <mediatype>application/x-bzip2-compressed-tar</mediatype>
+    <mediatype>application/x-xz</mediatype>
+    <mediatype>application/x-xz-compressed-tar</mediatype>
+    <mediatype>application/vnd.rar</mediatype>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.6.2" date="2026-09-08"/>
+    <release version="0.6.1" date="2026-09-07"/>
+    <release version="0.6.0" date="2026-07-25"/>
+    <release version="0.5.4-beta.3" date="2026-07-17"/>
+    <release version="0.5.4-beta.2" date="2026-07-17"/>
+    <release version="0.5.4-beta.1" date="2026-07-17"/>
+    <release version="0.5.3" date="2026-07-16"/>
+    <release version="0.5.2" date="2026-07-16"/>
+    <release version="0.5.1" date="2026-07-15"/>
+    <release version="0.4.2" date="2026-05-07"/>
+  </releases>
+</component>

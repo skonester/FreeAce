@@ -1,0 +1,624 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  configureDefaultArchiverActionButton,
+  openFinderServicesSettings,
+  openFinderSyncSettings,
+  renderOsIntegrationStatus,
+  refreshOsIntegrationStatus,
+  runDefaultArchiverAction,
+  resetPreferredArchiverToSystem,
+  setFreeAceDefaultArchiver,
+  wireOsIntegrationEvents,
+} from "../os-integration";
+
+const invokeMock = vi.mocked(invoke);
+
+describe("OS integration UI", () => {
+  beforeEach(() => {
+    document.getElementById("toast-region")?.remove();
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("");
+  });
+
+  it("renders packaged status and enables settings button", () => {
+    renderOsIntegrationStatus({
+      platform: "windows",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Open Default Apps",
+      defaultArchiverHelp: "Windows requires selecting defaults in Settings.",
+      archiveDefaults: [
+        {
+          key: "zip",
+          label: "ZIP",
+          extension: "zip",
+          mimeType: "application/zip",
+          currentHandler: "FreeAce",
+          isDefault: true,
+          canChange: false,
+          status: "Default",
+        },
+      ],
+    });
+
+    expect(document.getElementById("os-platform-label")?.textContent).toBe(
+      "Windows",
+    );
+    expect(document.getElementById("os-package-label")?.textContent).toBe(
+      "Installed app",
+    );
+    expect(
+      document
+        .getElementById("os-file-assoc-status")
+        ?.classList.contains("status-pill--ok"),
+    ).toBe(true);
+    expect(
+      (
+        document.getElementById(
+          "open-os-integration-settings",
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(
+      (document.getElementById("open-os-integration-settings") as HTMLElement)
+        .textContent,
+    ).toBe("Open Default Apps");
+    expect(
+      (
+        document.getElementById(
+          "reset-os-integration-defaults",
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(
+      document.getElementById("os-archive-default-list")?.textContent,
+    ).toContain("ZIP");
+  });
+
+  it("shows packaged Linux integrations as manual verification", () => {
+    renderOsIntegrationStatus({
+      platform: "linux",
+      packaged: true,
+      fileAssociationsKnown: false,
+      contextActionsKnown: false,
+      defaultAppHelpAvailable: false,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "FreeAce can ask xdg-mime to set archive defaults.",
+      archiveDefaults: [],
+    });
+
+    expect(document.getElementById("os-file-assoc-status")?.textContent).toBe(
+      "Verify manually",
+    );
+    expect(document.getElementById("os-context-status")?.textContent).toBe(
+      "Verify manually",
+    );
+    expect(
+      (
+        document.getElementById(
+          "reset-os-integration-defaults",
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("loads status from backend", async () => {
+    invokeMock.mockResolvedValueOnce({
+      platform: "linux",
+      packaged: false,
+      fileAssociationsKnown: false,
+      contextActionsKnown: false,
+      defaultAppHelpAvailable: false,
+      defaultArchiverActionAvailable: false,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "Install a packaged build first.",
+      archiveDefaults: [],
+    });
+
+    await refreshOsIntegrationStatus();
+
+    expect(invokeMock).toHaveBeenCalledWith("get_os_integration_status");
+    expect(document.getElementById("os-platform-label")?.textContent).toBe(
+      "Linux",
+    );
+    expect(
+      (
+        document.getElementById(
+          "open-os-integration-settings",
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("shows Unable to check when OS integration status refresh fails", async () => {
+    invokeMock.mockRejectedValueOnce(new Error("backend offline"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await refreshOsIntegrationStatus();
+
+    expect(document.getElementById("os-integration-help")?.textContent).toBe(
+      "Unable to check OS integration status.",
+    );
+    expect(
+      document.getElementById("os-integration-help")?.getAttribute("aria-live"),
+    ).toBe("polite");
+    expect(document.getElementById("os-file-assoc-status")?.textContent).toBe(
+      "Unable to check",
+    );
+    expect(document.getElementById("os-package-label")?.textContent).toBe(
+      "Unable to check",
+    );
+    expect(document.getElementById("os-platform-label")?.textContent).toBe(
+      "Unable to check",
+    );
+    expect(
+      (
+        document.getElementById(
+          "open-os-integration-settings",
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (
+        document.getElementById(
+          "reset-os-integration-defaults",
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(document.getElementById("os-archive-default-list")?.innerHTML).toBe(
+      "",
+    );
+    expect(
+      document
+        .getElementById("os-file-assoc-status")
+        ?.classList.contains("status-pill--unknown"),
+    ).toBe(true);
+    expect(document.getElementById("os-context-status")?.textContent).toBe(
+      "Unable to check",
+    );
+    warn.mockRestore();
+  });
+
+  it("sets FreeAce as the default archiver and refreshes status", async () => {
+    invokeMock.mockResolvedValueOnce({
+      platform: "linux",
+      changed: true,
+      message: "ok",
+      results: [
+        {
+          key: "zip",
+          label: "ZIP",
+          extension: "zip",
+          mimeType: "application/zip",
+          currentHandler: "run.rosie.freeace.desktop",
+          isDefault: true,
+          canChange: true,
+          status: "Default",
+        },
+      ],
+    });
+    invokeMock.mockResolvedValueOnce({
+      platform: "linux",
+      packaged: true,
+      fileAssociationsKnown: false,
+      contextActionsKnown: false,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "FreeAce can ask xdg-mime to set archive defaults.",
+      archiveDefaults: [],
+    });
+
+    await setFreeAceDefaultArchiver();
+
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      1,
+      "set_freeace_default_archiver",
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "get_os_integration_status");
+  });
+
+  it("configures setup-style default action buttons from platform status", () => {
+    const button = document.createElement("button");
+
+    configureDefaultArchiverActionButton(button, {
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "macOS may ask you to confirm each archive type.",
+      archiveDefaults: [],
+    });
+
+    expect(button.textContent).toBe("Make FreeAce Default");
+    expect(button.disabled).toBe(false);
+    expect(button.title).toContain("macOS");
+  });
+
+  it("runs the shared default archiver action for macOS", async () => {
+    const button = document.createElement("button");
+    renderOsIntegrationStatus({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "macOS may ask you to confirm each archive type.",
+      archiveDefaults: [],
+    });
+    invokeMock.mockResolvedValueOnce({
+      platform: "macos",
+      changed: true,
+      message: "ok",
+      results: [
+        {
+          key: "tgz",
+          label: "TGZ",
+          extension: "tgz",
+          mimeType: "application/x-compressed-tar",
+          currentHandler: "run.rosie.freeace",
+          isDefault: true,
+          canChange: true,
+          status: "Default",
+        },
+      ],
+    });
+    invokeMock.mockResolvedValueOnce({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "macOS may ask you to confirm each archive type.",
+      archiveDefaults: [],
+    });
+
+    await runDefaultArchiverAction(button);
+
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      1,
+      "set_freeace_default_archiver",
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "get_os_integration_status");
+  });
+
+  it("runs the shared default archiver action through Windows Settings", async () => {
+    const button = document.createElement("button");
+    renderOsIntegrationStatus({
+      platform: "windows",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: false,
+      defaultArchiverActionLabel: "Open Default Apps",
+      defaultArchiverHelp: "Windows requires selecting defaults in Settings.",
+      archiveDefaults: [],
+    });
+
+    await runDefaultArchiverAction(button);
+
+    expect(invokeMock).toHaveBeenCalledWith("open_os_integration_settings");
+  });
+
+  it("resets preferred archiver to the system archiver and refreshes status", async () => {
+    invokeMock.mockResolvedValueOnce({
+      platform: "macos",
+      changed: true,
+      message: "ok",
+      results: [
+        {
+          key: "zip",
+          label: "ZIP",
+          extension: "zip",
+          mimeType: "application/zip",
+          currentHandler: "com.apple.archiveutility",
+          isDefault: false,
+          canChange: true,
+          status: "System",
+        },
+      ],
+    });
+    invokeMock.mockResolvedValueOnce({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "macOS may ask you to confirm each archive type.",
+      archiveDefaults: [],
+    });
+
+    await resetPreferredArchiverToSystem();
+
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      1,
+      "reset_preferred_archiver_to_system",
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "get_os_integration_status");
+  });
+
+  it("surfaces reset failures and unchanged system results", async () => {
+    invokeMock.mockRejectedValueOnce(new Error("xdg-mime failed"));
+
+    await resetPreferredArchiverToSystem();
+
+    expect(document.getElementById("toast-region")?.textContent).toContain(
+      "xdg-mime failed",
+    );
+
+    invokeMock.mockResolvedValueOnce({
+      platform: "linux",
+      changed: false,
+      message: "nothing changed",
+      results: [
+        {
+          key: "zip",
+          label: "ZIP",
+          extension: "zip",
+          mimeType: "application/zip",
+          currentHandler: "other.desktop",
+          isDefault: false,
+          canChange: true,
+          status: "Other",
+        },
+      ],
+    });
+    invokeMock.mockResolvedValueOnce({
+      platform: "linux",
+      packaged: true,
+      fileAssociationsKnown: false,
+      contextActionsKnown: false,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "help",
+      archiveDefaults: [],
+    });
+
+    await resetPreferredArchiverToSystem();
+
+    expect(document.getElementById("toast-region")?.textContent).toContain(
+      "nothing changed",
+    );
+  });
+
+  it("wires refresh/default/reset buttons", async () => {
+    invokeMock.mockResolvedValue({
+      platform: "linux",
+      packaged: true,
+      fileAssociationsKnown: false,
+      contextActionsKnown: false,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "help",
+      archiveDefaults: [],
+    });
+
+    wireOsIntegrationEvents();
+
+    (
+      document.getElementById(
+        "refresh-os-integration-status",
+      ) as HTMLButtonElement
+    ).click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invokeMock).toHaveBeenCalledWith("get_os_integration_status");
+  });
+
+  it("shows Finder Sync status on macOS and enables via pluginkit", async () => {
+    renderOsIntegrationStatus({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: false,
+      defaultAppHelpAvailable: true,
+      finderServicesAvailable: true,
+      finderServicesKnown: true,
+      finderServicesEnabled: false,
+      finderSyncAvailable: true,
+      finderSyncKnown: true,
+      finderSyncEnabled: false,
+      finderSyncHelp: "Finder Sync is installed but not enabled.",
+      archiveDefaults: [],
+    });
+
+    const row = document.getElementById("os-finder-sync-row") as HTMLElement;
+    expect(row.hidden).toBe(false);
+    expect(document.getElementById("os-finder-sync-status")?.textContent).toBe(
+      "Not enabled",
+    );
+
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValueOnce("").mockResolvedValueOnce({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      finderServicesAvailable: true,
+      finderServicesKnown: true,
+      finderServicesEnabled: false,
+      finderSyncAvailable: true,
+      finderSyncKnown: true,
+      finderSyncEnabled: true,
+      finderSyncHelp: "Finder Sync is enabled.",
+      archiveDefaults: [],
+    });
+    await openFinderSyncSettings();
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "enable_finder_sync");
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "get_os_integration_status");
+    expect(document.getElementById("toast-region")?.textContent).toContain(
+      "Finder extension is enabled",
+    );
+    expect(document.getElementById("os-finder-sync-status")?.textContent).toBe(
+      "Enabled",
+    );
+  });
+
+  it("opens Login Items & Extensions when pluginkit does not enable Finder Sync", async () => {
+    renderOsIntegrationStatus({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: false,
+      defaultAppHelpAvailable: true,
+      finderServicesAvailable: true,
+      finderServicesKnown: true,
+      finderServicesEnabled: false,
+      finderSyncAvailable: true,
+      finderSyncKnown: true,
+      finderSyncEnabled: false,
+      archiveDefaults: [],
+    });
+
+    invokeMock.mockReset();
+    invokeMock
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce({
+        platform: "macos",
+        packaged: true,
+        fileAssociationsKnown: true,
+        contextActionsKnown: false,
+        defaultAppHelpAvailable: true,
+        finderServicesAvailable: true,
+        finderServicesKnown: true,
+        finderServicesEnabled: false,
+        finderSyncAvailable: true,
+        finderSyncKnown: true,
+        finderSyncEnabled: false,
+        archiveDefaults: [],
+      })
+      .mockResolvedValueOnce("");
+
+    await openFinderSyncSettings();
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "enable_finder_sync");
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "get_os_integration_status");
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "open_finder_sync_settings");
+    expect(document.getElementById("toast-region")?.textContent).toContain(
+      "System Settings will open",
+    );
+  });
+
+  it("shows Finder Services status on macOS and opens System Settings", async () => {
+    renderOsIntegrationStatus({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      defaultArchiverActionAvailable: true,
+      defaultArchiverActionLabel: "Make FreeAce Default",
+      defaultArchiverHelp: "macOS may ask you to confirm each archive type.",
+      finderServicesAvailable: true,
+      finderServicesKnown: true,
+      finderServicesEnabled: false,
+      finderServicesHelp:
+        "Turn on Extract with FreeAce and Compress with FreeAce under Keyboard Shortcuts → Services.",
+      archiveDefaults: [],
+    });
+
+    const row = document.getElementById(
+      "os-finder-services-row",
+    ) as HTMLElement;
+    expect(row.hidden).toBe(false);
+    expect(
+      document.getElementById("os-finder-services-status")?.textContent,
+    ).toBe("Not enabled");
+    expect(
+      (
+        document.getElementById(
+          "open-finder-services-settings",
+        ) as HTMLButtonElement
+      ).textContent,
+    ).toBe("Enable…");
+
+    renderOsIntegrationStatus({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      finderServicesAvailable: true,
+      finderServicesKnown: false,
+      finderServicesEnabled: false,
+      finderServicesHelp: "Could not verify Services status.",
+      archiveDefaults: [],
+    });
+    expect(
+      document.getElementById("os-finder-services-status")?.textContent,
+    ).toBe("Unknown");
+    expect(
+      document
+        .getElementById("os-finder-services-status")
+        ?.classList.contains("status-pill--unknown"),
+    ).toBe(true);
+
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValueOnce("");
+    await openFinderServicesSettings();
+    expect(invokeMock).toHaveBeenCalledWith("open_finder_services_settings");
+    expect(document.getElementById("toast-region")?.textContent).toContain(
+      "Services → Files and Folders",
+    );
+
+    renderOsIntegrationStatus({
+      platform: "macos",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      finderServicesAvailable: true,
+      finderServicesKnown: true,
+      finderServicesEnabled: true,
+      archiveDefaults: [],
+    });
+    document.getElementById("toast-region")?.remove();
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValueOnce("");
+    await openFinderServicesSettings();
+    expect(invokeMock).toHaveBeenCalledWith("open_finder_services_settings");
+    expect(document.getElementById("toast-region")).toBeNull();
+
+    renderOsIntegrationStatus({
+      platform: "windows",
+      packaged: true,
+      fileAssociationsKnown: true,
+      contextActionsKnown: true,
+      defaultAppHelpAvailable: true,
+      finderServicesAvailable: false,
+      finderServicesEnabled: false,
+      win11ModernMenuAvailable: true,
+      win11ModernMenuKnown: true,
+      win11ModernMenuRegistered: false,
+      win11ModernMenuHelp: "Win11 modern menu is not registered.",
+      archiveDefaults: [],
+    });
+    expect(row.hidden).toBe(true);
+    const win11Row = document.getElementById(
+      "os-win11-menu-row",
+    ) as HTMLElement;
+    expect(win11Row.hidden).toBe(false);
+    expect(document.getElementById("os-win11-menu-status")?.textContent).toBe(
+      "Not registered",
+    );
+  });
+});

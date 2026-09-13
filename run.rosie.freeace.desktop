@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=FreeAce
+Exec=freeace %F
+Icon=run.rosie.freeace
+Categories=Utility;Archiving;
+Terminal=false
+MimeType=application/x-7z-compressed;application/x-freeace;application/zip;application/x-tar;application/gzip;application/x-compressed-tar;application/x-bzip2;application/x-bzip2-compressed-tar;application/x-xz;application/x-xz-compressed-tar;application/vnd.rar;
+Actions=Open;Extract;Compress;
+
+[Desktop Action Open]
+Name=Open with FreeAce
+Exec=freeace %F
+
+[Desktop Action Extract]
+Name=Extract with FreeAce
+Exec=freeace --extract %F
+
+[Desktop Action Compress]
+Name=Compress with FreeAce
+Exec=freeace --compress %F

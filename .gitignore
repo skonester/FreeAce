@@ -1,0 +1,61 @@
+.DS_Store
+# Logs
+logs
+*.log
+npm-debug.log*
+
+/coverage/*
+
+licenses.json
+**/.*/
+!.github/
+!.githooks/
+!src-tauri/.cargo/
+!src-tauri/.cargo/audit.toml
+
+# Runtime data
+pids
+*.pid
+
+# Dependency directories
+node_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# dotenv environment variable files
+.env
+.env.*
+!.env.example
+
+# Vite logs
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Tauri
+src-tauri/target/
+src-tauri/vendor/**/target/
+src-tauri/binaries/
+src-tauri/macos/build/
+src-tauri/.cargo/*
+!src-tauri/.cargo/audit.toml
+
+# Build outputs
+dist/
+release/
+flatpak-build/
+flatpak-repo/
+.flatpak-source/
+
+# Generated files
+public/licenses.json
+public/licenses-cargo.json
+public/licenses-cargo-unresolved.json
+public/7zip-license*.txt
+src-tauri/windows/shell/out/
+src-tauri/windows/shell/build-*/
+src-tauri/windows/shell/msix_identity.manifest
+src-tauri/windows/shell/msix_extract_identity.manifest

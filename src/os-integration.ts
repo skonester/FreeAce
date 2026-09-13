@@ -1,0 +1,646 @@
+import { invoke } from "@tauri-apps/api/core";
+import { $ } from "./utils";
+import { showToast } from "./toast";
+
+export interface OsIntegrationStatus {
+  platform: string;
+  packaged: boolean;
+  fileAssociationsKnown: boolean;
+  contextActionsKnown: boolean;
+  defaultAppHelpAvailable: boolean;
+  defaultArchiverActionAvailable?: boolean;
+  defaultArchiverActionLabel?: string;
+  defaultArchiverHelp?: string;
+  /** macOS only: Finder Services (Extract/Compress) row is shown when true. */
+  finderServicesAvailable?: boolean;
+  /** false when registration/prefs probes both fail → show Unknown. */
+  finderServicesKnown?: boolean;
+  finderServicesEnabled?: boolean;
+  finderServicesHelp?: string;
+  /** macOS Finder Sync appex for primary Finder context menus. */
+  finderSyncAvailable?: boolean;
+  finderSyncKnown?: boolean;
+  finderSyncEnabled?: boolean;
+  finderSyncHelp?: string;
+  /** Windows: sparse MSIX identity for Win11 menu (not a full AppX app install). */
+  win11ModernMenuAvailable?: boolean;
+  win11ModernMenuKnown?: boolean;
+  win11ModernMenuRegistered?: boolean;
+  win11ModernMenuHelp?: string;
+  archiveDefaults?: ArchiveDefaultStatus[];
+}
+
+export interface ArchiveDefaultStatus {
+  key: string;
+  label: string;
+  extension: string;
+  mimeType: string;
+  currentHandler: string | null;
+  isDefault: boolean;
+  canChange: boolean;
+  status: string;
+}
+
+interface DefaultArchiverResult {
+  platform: string;
+  changed: boolean;
+  message: string;
+  results: ArchiveDefaultStatus[];
+}
+
+let latestStatus: OsIntegrationStatus | null = null;
+let osIntegrationRefreshInFlight: Promise<void> | null = null;
+
+const FINDER_SYNC_ENABLED_MESSAGE = [
+  "FreeAce's Finder extension is enabled.",
+  "",
+  "Right-click files in Finder to use Extract with FreeAce / Compress with FreeAce in the main menu.",
+  "If items are missing, open Login Items & Extensions and confirm FreeAce Finder is on.",
+].join("\n");
+
+function platformLabel(platform: string): string {
+  if (platform === "windows") return "Windows";
+  if (platform === "macos") return "macOS";
+  if (platform === "linux") return "Linux";
+  return platform || "Unknown";
+}
+
+function setBadge(
+  id: string,
+  ok: boolean,
+  ready = "Ready",
+  action = "Action needed",
+): void {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = ok ? ready : action;
+  el.classList.toggle("status-pill--ok", ok);
+  el.classList.toggle("status-pill--warn", !ok);
+  el.classList.remove("status-pill--unknown");
+}
+
+function setTriStatePill(
+  id: string,
+  known: boolean,
+  ok: boolean,
+  okLabel: string,
+  offLabel: string,
+  unknownLabel = "Unknown",
+): void {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove(
+    "status-pill--ok",
+    "status-pill--warn",
+    "status-pill--unknown",
+  );
+  if (!known) {
+    el.textContent = unknownLabel;
+    el.classList.add("status-pill--unknown");
+    return;
+  }
+  if (ok) {
+    el.textContent = okLabel;
+    el.classList.add("status-pill--ok");
+    return;
+  }
+  el.textContent = offLabel;
+  el.classList.add("status-pill--warn");
+}
+
+function setFinderServicesBadge(
+  known: boolean,
+  enabled: boolean,
+  packaged: boolean,
+): void {
+  setTriStatePill(
+    "os-finder-services-status",
+    known,
+    enabled,
+    "Enabled",
+    packaged ? "Not enabled" : "Action needed",
+  );
+}
+
+function setText(id: string, value: string): void {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function defaultActionLabel(status: OsIntegrationStatus): string {
+  if (status.defaultArchiverActionLabel)
+    return status.defaultArchiverActionLabel;
+  return status.platform === "windows"
+    ? "Open Default Apps"
+    : "Make FreeAce Default";
+}
+
+function defaultArchiverActionAvailable(status: OsIntegrationStatus): boolean {
+  return (
+    (status.defaultArchiverActionAvailable ?? false) ||
+    status.defaultAppHelpAvailable
+  );
+}
+
+function systemResetAvailable(status: OsIntegrationStatus): boolean {
+  return status.platform === "windows" && status.defaultAppHelpAvailable;
+}
+
+function systemResetHelp(status: OsIntegrationStatus): string {
+  if (!status.packaged && status.platform !== "windows") {
+    return "Install a packaged build before changing archive defaults.";
+  }
+  if (status.platform === "macos") {
+    return "macOS has no universal system archiver for every archive type. Use Finder's Get Info / Open With controls.";
+  }
+  if (status.platform === "windows") {
+    return "Open Windows Default Apps and choose the system archive app.";
+  }
+  if (status.platform === "linux") {
+    return "Linux does not expose one universal system archiver.";
+  }
+  return "System archiver reset is not available for this platform.";
+}
+
+function renderArchiveDefaults(defaults: ArchiveDefaultStatus[] = []): void {
+  const list = document.getElementById("os-archive-default-list");
+  if (!list) return;
+
+  list.innerHTML = "";
+  for (const item of defaults) {
+    const row = document.createElement("div");
+    row.className = "os-default-row";
+
+    const name = document.createElement("span");
+    name.className = "os-default-row__name";
+    name.textContent = item.label;
+
+    const handler = document.createElement("span");
+    handler.className = "os-default-row__handler";
+    handler.textContent = item.currentHandler
+      ? `Default: ${item.currentHandler}`
+      : item.status;
+    handler.title = handler.textContent;
+
+    const badge = document.createElement("span");
+    badge.className = `status-pill ${
+      item.isDefault ? "status-pill--ok" : "status-pill--warn"
+    }`;
+    badge.textContent = item.isDefault ? "FreeAce" : item.status;
+
+    row.append(name, handler, badge);
+    list.appendChild(row);
+  }
+}
+
+export function renderOsIntegrationStatus(status: OsIntegrationStatus): void {
+  latestStatus = status;
+  setText("os-platform-label", platformLabel(status.platform));
+  setText(
+    "os-package-label",
+    status.packaged ? "Installed app" : "Development build",
+  );
+  setBadge(
+    "os-file-assoc-status",
+    status.fileAssociationsKnown,
+    "Ready",
+    status.platform === "windows" &&
+      status.packaged &&
+      !(status.archiveDefaults ?? []).some(
+        (entry) => entry.currentHandler !== null || entry.isDefault,
+      )
+      ? "Unknown"
+      : status.platform === "linux" && status.packaged
+        ? "Verify manually"
+        : "Action needed",
+  );
+  {
+    let contextReady = "Ready";
+    let contextAction = "Action needed";
+    if (status.platform === "linux" && status.packaged) {
+      contextAction = "Verify manually";
+    } else if (
+      status.platform === "windows" &&
+      status.packaged &&
+      status.win11ModernMenuKnown === false
+    ) {
+      contextAction = "Unknown";
+    } else if (
+      status.platform === "macos" &&
+      status.packaged &&
+      status.finderServicesAvailable
+    ) {
+      if (status.finderServicesKnown === false) {
+        contextAction = "Unknown";
+      } else if (!status.finderServicesEnabled) {
+        contextAction = "Not enabled";
+      }
+    }
+    setBadge(
+      "os-context-status",
+      status.contextActionsKnown,
+      contextReady,
+      contextAction,
+    );
+  }
+
+  const finderSyncRow = document.getElementById(
+    "os-finder-sync-row",
+  ) as HTMLElement | null;
+  const finderSyncAvailable = status.finderSyncAvailable === true;
+  if (finderSyncRow) {
+    finderSyncRow.hidden = !finderSyncAvailable;
+  }
+  if (finderSyncAvailable) {
+    const syncKnown = status.finderSyncKnown !== false;
+    const syncEnabled = status.finderSyncEnabled === true;
+    setTriStatePill(
+      "os-finder-sync-status",
+      syncKnown,
+      syncEnabled,
+      "Enabled",
+      status.packaged ? "Not enabled" : "Action needed",
+    );
+    setText(
+      "os-finder-sync-help",
+      status.finderSyncHelp ??
+        "Primary Finder right-click Extract / Compress via Finder Sync (Login Items & Extensions).",
+    );
+    const syncBtn = document.getElementById(
+      "open-finder-sync-settings",
+    ) as HTMLButtonElement | null;
+    if (syncBtn) {
+      syncBtn.textContent =
+        syncKnown && syncEnabled ? "Open Extensions…" : "Enable…";
+      syncBtn.disabled = false;
+      syncBtn.title =
+        syncKnown && syncEnabled
+          ? "Open Login Items & Extensions"
+          : "Enable FreeAce Finder Sync for primary Finder context menus";
+    }
+  }
+
+  const finderRow = document.getElementById(
+    "os-finder-services-row",
+  ) as HTMLElement | null;
+  const finderAvailable = status.finderServicesAvailable === true;
+  if (finderRow) {
+    finderRow.hidden = !finderAvailable;
+  }
+  if (finderAvailable) {
+    const finderKnown = status.finderServicesKnown !== false;
+    const finderEnabled = status.finderServicesEnabled === true;
+    setFinderServicesBadge(finderKnown, finderEnabled, status.packaged);
+    setText(
+      "os-finder-services-help",
+      status.finderServicesHelp ??
+        "Extract / Compress with FreeAce under Keyboard Shortcuts → Services (not Login Items & Extensions).",
+    );
+    const finderBtn = document.getElementById(
+      "open-finder-services-settings",
+    ) as HTMLButtonElement | null;
+    if (finderBtn) {
+      finderBtn.textContent =
+        finderKnown && finderEnabled ? "Open Services…" : "Enable…";
+      finderBtn.disabled = false;
+      finderBtn.title =
+        finderKnown && finderEnabled
+          ? "Open Keyboard Shortcuts → Services → Files and Folders"
+          : "Enable Extract / Compress with FreeAce for Finder";
+    }
+  }
+
+  const win11Row = document.getElementById(
+    "os-win11-menu-row",
+  ) as HTMLElement | null;
+  const win11Available = status.win11ModernMenuAvailable === true;
+  if (win11Row) {
+    win11Row.hidden = !win11Available;
+  }
+  if (win11Available) {
+    const win11Known = status.win11ModernMenuKnown !== false;
+    const win11Registered = status.win11ModernMenuRegistered === true;
+    setTriStatePill(
+      "os-win11-menu-status",
+      win11Known,
+      win11Registered,
+      "Registered",
+      status.packaged ? "Not registered" : "Action needed",
+    );
+    setText(
+      "os-win11-menu-help",
+      status.win11ModernMenuHelp ??
+        "Sparse identity package for the primary right-click menu (FreeAce stays a normal NSIS install).",
+    );
+  }
+
+  const help = document.getElementById("os-integration-help");
+  if (help) {
+    if (!status.packaged) {
+      help.textContent =
+        "Install a packaged build to register archive file types and OS menu actions.";
+    } else if (status.platform === "macos") {
+      help.textContent =
+        status.defaultArchiverHelp ??
+        "Use Finder's Open With or Get Info for defaults. Packaged builds also add Services: Extract / Compress with FreeAce.";
+    } else if (status.platform === "windows") {
+      help.textContent =
+        status.win11ModernMenuHelp ??
+        status.defaultArchiverHelp ??
+        "FreeAce installs as a normal NSIS app. Win11 modern menu uses a sparse identity package; classic Extract/Compress registry verbs are only a fallback when that package is unavailable. Open with FreeAce stays on the file-association ProgId.";
+    } else if (status.platform === "linux") {
+      help.textContent =
+        status.defaultArchiverHelp ??
+        "Linux package installs can vary by desktop environment. Verify the FreeAce desktop entry registered archive MIME types after install.";
+    } else {
+      help.textContent =
+        "Use your OS default-app settings to map archive files to FreeAce.";
+    }
+  }
+
+  const openBtn = document.getElementById(
+    "open-os-integration-settings",
+  ) as HTMLButtonElement | null;
+  if (openBtn) {
+    configureDefaultArchiverActionButton(openBtn, status);
+  }
+
+  const resetBtn = document.getElementById(
+    "reset-os-integration-defaults",
+  ) as HTMLButtonElement | null;
+  if (resetBtn) {
+    resetBtn.textContent = "Reset Preferred Archiver to System Archiver";
+    resetBtn.disabled = !systemResetAvailable(status);
+    resetBtn.title = systemResetHelp(status);
+  }
+  renderArchiveDefaults(status.archiveDefaults);
+}
+
+async function getOsIntegrationStatus(): Promise<OsIntegrationStatus> {
+  const status = await invoke<OsIntegrationStatus>("get_os_integration_status");
+  latestStatus = status;
+  return status;
+}
+
+export function configureDefaultArchiverActionButton(
+  button: HTMLButtonElement,
+  status: OsIntegrationStatus,
+): void {
+  button.textContent = defaultActionLabel(status);
+  button.disabled = !defaultArchiverActionAvailable(status);
+  button.title = status.defaultArchiverHelp ?? "";
+}
+
+export async function refreshDefaultArchiverActionButton(
+  button: HTMLButtonElement,
+): Promise<void> {
+  try {
+    const status = await getOsIntegrationStatus();
+    configureDefaultArchiverActionButton(button, status);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`Failed to refresh default archiver action: ${msg}`);
+  }
+}
+
+function renderOsIntegrationRefreshFailure(): void {
+  latestStatus = null;
+  const help = document.getElementById("os-integration-help");
+  if (help) {
+    if (!help.hasAttribute("aria-live")) {
+      help.setAttribute("aria-live", "polite");
+    }
+    help.textContent = "Unable to check OS integration status.";
+  }
+  setText("os-platform-label", "Unable to check");
+  setText("os-package-label", "Unable to check");
+  const list = document.getElementById("os-archive-default-list");
+  if (list) list.innerHTML = "";
+  for (const id of [
+    "os-file-assoc-status",
+    "os-context-status",
+    "os-finder-sync-status",
+    "os-finder-services-status",
+    "os-win11-menu-status",
+  ]) {
+    setTriStatePill(id, false, false, "", "", "Unable to check");
+  }
+  for (const id of [
+    "open-os-integration-settings",
+    "reset-os-integration-defaults",
+  ]) {
+    const button = document.getElementById(id) as HTMLButtonElement | null;
+    if (button) {
+      button.disabled = true;
+      button.title = "Unable to check OS integration status.";
+    }
+  }
+}
+
+export async function refreshOsIntegrationStatus(): Promise<void> {
+  if (osIntegrationRefreshInFlight) return osIntegrationRefreshInFlight;
+  osIntegrationRefreshInFlight = (async () => {
+    const refresh = document.getElementById(
+      "refresh-os-integration-status",
+    ) as HTMLButtonElement | null;
+    if (refresh) refresh.disabled = true;
+    try {
+      const status = await getOsIntegrationStatus();
+      renderOsIntegrationStatus(status);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`Failed to refresh OS integration status: ${msg}`);
+      renderOsIntegrationRefreshFailure();
+    } finally {
+      if (refresh) refresh.disabled = false;
+      osIntegrationRefreshInFlight = null;
+    }
+  })();
+  return osIntegrationRefreshInFlight;
+}
+
+export async function openOsIntegrationSettings(): Promise<void> {
+  try {
+    await invoke("open_os_integration_settings");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(msg, "error", 0);
+  }
+}
+
+export async function openFinderSyncSettings(): Promise<void> {
+  const needsEnable =
+    latestStatus?.finderSyncAvailable === true &&
+    latestStatus.finderSyncEnabled !== true;
+  try {
+    if (needsEnable) {
+      await invoke("enable_finder_sync");
+      await refreshOsIntegrationStatus();
+      if (latestStatus?.finderSyncEnabled) {
+        showToast(FINDER_SYNC_ENABLED_MESSAGE, "success", 0);
+      } else {
+        await invoke("open_finder_sync_settings");
+        showToast(
+          [
+            "System Settings will open to Login Items & Extensions.",
+            "",
+            "Find FreeAce Finder (or FreeAce) and turn it on.",
+            "Return here and click Refresh when enabled.",
+          ].join("\n"),
+          "info",
+          0,
+        );
+      }
+      return;
+    }
+    await invoke("open_finder_sync_settings");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(msg, "error", 0);
+  }
+}
+
+export async function openFinderServicesSettings(): Promise<void> {
+  const needsEnable =
+    latestStatus?.finderServicesAvailable === true &&
+    latestStatus.finderServicesEnabled !== true;
+  try {
+    if (needsEnable) {
+      await invoke("open_finder_services_settings");
+      showToast(
+        [
+          "System Settings will open to Keyboard Shortcuts.",
+          "",
+          "Open Services → Files and Folders, then enable Extract with FreeAce and Compress with FreeAce.",
+          "Return here and click Refresh when finished.",
+        ].join("\n"),
+        "info",
+        0,
+      );
+      return;
+    }
+    await invoke("open_finder_services_settings");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(msg, "error", 0);
+  }
+}
+
+export async function setFreeAceDefaultArchiver(
+  button = document.getElementById(
+    "open-os-integration-settings",
+  ) as HTMLButtonElement | null,
+): Promise<void> {
+  const previousLabel = button?.textContent ?? "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Working…";
+  }
+
+  try {
+    const result = await invoke<DefaultArchiverResult>(
+      "set_freeace_default_archiver",
+    );
+    renderArchiveDefaults(result.results);
+    await refreshOsIntegrationStatus();
+    if (result.results.some((entry) => !entry.isDefault)) {
+      showToast(result.message, result.changed ? "info" : "error", 0);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(msg, "error", 0);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = latestStatus
+        ? defaultActionLabel(latestStatus)
+        : previousLabel;
+    }
+  }
+}
+
+export async function runDefaultArchiverAction(
+  button = document.getElementById(
+    "open-os-integration-settings",
+  ) as HTMLButtonElement | null,
+): Promise<void> {
+  let status = latestStatus;
+  if (!status) {
+    try {
+      status = await getOsIntegrationStatus();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(msg, "error", 0);
+      return;
+    }
+  }
+
+  if (status.platform === "windows") {
+    await openOsIntegrationSettings();
+    return;
+  }
+
+  await setFreeAceDefaultArchiver(button);
+}
+
+export async function resetPreferredArchiverToSystem(): Promise<void> {
+  const button = document.getElementById(
+    "reset-os-integration-defaults",
+  ) as HTMLButtonElement | null;
+  const previousLabel = button?.textContent ?? "";
+  const wasDisabled = button?.disabled ?? false;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Working…";
+  }
+
+  try {
+    const result = await invoke<DefaultArchiverResult>(
+      "reset_preferred_archiver_to_system",
+    );
+    await refreshOsIntegrationStatus();
+    const needsAttention =
+      !result.changed ||
+      result.results.some((entry) => entry.status !== "System");
+    if (needsAttention) {
+      showToast(result.message, result.changed ? "info" : "error", 0);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(msg, "error", 0);
+  } finally {
+    if (button) {
+      button.textContent = previousLabel;
+      button.disabled = latestStatus
+        ? !systemResetAvailable(latestStatus)
+        : wasDisabled;
+      button.title = latestStatus
+        ? systemResetHelp(latestStatus)
+        : button.title;
+    }
+  }
+}
+
+export function wireOsIntegrationEvents(): void {
+  $("refresh-os-integration-status").addEventListener("click", () => {
+    void refreshOsIntegrationStatus();
+  });
+  $("open-os-integration-settings").addEventListener("click", () => {
+    void runDefaultArchiverAction();
+  });
+  $("reset-os-integration-defaults").addEventListener("click", () => {
+    void resetPreferredArchiverToSystem();
+  });
+  const finderBtn = document.getElementById("open-finder-services-settings");
+  if (finderBtn) {
+    finderBtn.addEventListener("click", () => {
+      void openFinderServicesSettings();
+    });
+  }
+  const finderSyncBtn = document.getElementById("open-finder-sync-settings");
+  if (finderSyncBtn) {
+    finderSyncBtn.addEventListener("click", () => {
+      void openFinderSyncSettings();
+    });
+  }
+}
