@@ -26,16 +26,43 @@ See [ARCHITECTURE.md](ARCHITECTURE.md), [CONTRIBUTING.md](CONTRIBUTING.md), and
 
 ## FreeAce
 
-As a fan of the WinAce format and retro file compression I decided to make this. 
+As a fan of the WinAce format and retro file compression in my youth I decided to make this. This is a free program meant to work with all the popular file compression formats while introducing an inspired successor to the .ace format. It is
+considered a work in progress and currently competes with compression methods such as .zpaq.
+7zip is the still considered the main format
+you should use for important archive best practice.
+This program is meant to incorporate into your
+existing workflow to handle day to day file
+opening over time. It handles the bigger names
+will allowing you to experiment with .freeace.
+
+One click on the file and it extracts into
+the directory right next to the original file.
+
+This is meant as a personal hobby project over time.
+
+it currently supports
+freeace
+7z
+zip
+tar
+gzip
+bzip2
+xz
+
+
+to understand the format FreeAce uses for its
+.freeace format along with benchmarks 
+https://github.com/ValisSowilo/Gleipnir
+
+
 
 
 ## System requirements
 
 - macOS 26 or later. The universal build supports Intel and Apple silicon Macs
   that can run macOS 26+.
-- Windows 10 version 2004 (build 19041) or later, on x64 or ARM64. Explorer
-  integration uses the classic context-menu verbs (under "Show more options" on
-  Windows 11).
+- Windows 10 version 2004 (build 19041) or later, on x64 or ARM64. The modern
+  Explorer integration requires a signed NSIS install.
 - Linux x64: Ubuntu 24.04+, Debian 13+, or Fedora 43+ (or a compatible
   distribution with the required WebKitGTK runtime). The public release ships
   x64 AppImage, DEB, RPM, and sideloaded Flatpak bundles. ARM64 AppImage/DEB/RPM
@@ -58,14 +85,13 @@ native build runs.
   `Extract with FreeAce`, and `Compress with FreeAce` as the classic fallback
   (including Explorer’s “Show more options” path when the modern package is
   unavailable).
-- The Win11 modern context menu (top-level entries in the compact menu) is
-  **not shipped**. It requires a **sparse identity MSIX** + `freeace_shell.dll`
-  that Windows only registers when Authenticode-signed, and FreeAce builds are
-  unsigned. The source and build script remain under `src-tauri/windows/shell/`
-  for anyone with a code-signing certificate; wiring it back in means restoring
-  the `shell-<version>/` entries in `tauri.windows.conf.json` `bundle.resources`.
-  When present and signed, the installer registers it and removes the classic
-  verbs so they do not stack under Show more options. See
+- Signed Windows NSIS builds also register a Win11 modern context menu via a
+  **sparse identity MSIX** + `freeace_shell.dll` (`FreeAce` submenu, plus top-level
+  Extract on archives). After a successful modern registration, classic verbs
+  are removed so they do not stack under Show more options; they remain the
+  fallback when package registration fails. FreeAce itself stays a normal
+  per-user NSIS Win32 install; the MSIX is not a Store/AppX app package; it only
+  grants package identity so Explorer can load the shell DLL. See
   `src-tauri/windows/shell/README.md` and `docs/QA-CONTEXT-MENUS.md`.
 - Linux `deb`, `rpm`, and Flatpak bundles include desktop `Open`, `Extract`, and
   `Compress` actions.
@@ -78,14 +104,7 @@ native build runs.
 
 ## Builds
 
-- Windows: `npm run tauri:build` (unsigned NSIS installer in
-  `src-tauri/target/release/bundle/nsis/`). No environment variables or
-  certificates are needed. Rust must be the **MSVC** toolchain: if
-  `rustup show` reports a `*-pc-windows-gnu` default host, run
-  `rustup set default-host x86_64-pc-windows-msvc` (or prefix the command with
-  `RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc`), otherwise the build fails
-  with `dlltool.exe: program not found`. `npm run build:win` is the signed
-  release path and expects Azure Trusted Signing credentials.
+- Windows: `npm run build:win`
 - macOS: `npm run build:mac:universal` then `npm run build:mac:zip`
 - Linux x64: `npm run build:linux` (or `npm run build:linux:x64`)
 - Linux ARM64 (on native ARM64 hardware/emulation): `npm run build:linux:arm64`

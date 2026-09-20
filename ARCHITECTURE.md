@@ -1,5 +1,9 @@
 # Architecture
 
+
+This is here for people using LLM's to better
+understand the architecture.
+
 FreeAce is a [Tauri 2](https://tauri.app) app: a vanilla TypeScript + HTML + CSS
 frontend driving a Rust backend that shells out to a bundled 7-Zip sidecar.
 
