@@ -5,6 +5,7 @@ import {
   populateSettingsModal,
   readSettingsModal,
   syncSettingsSecurityControlsForFormat,
+  syncSettingsCompressionControlsForFormat,
   openSettingsModal,
   closeSettingsModal,
   toggleSettingsModal,
@@ -331,6 +332,56 @@ describe("syncSettingsSecurityControlsForFormat", () => {
     syncSettingsSecurityControlsForFormat("tar");
     const el = document.getElementById("s-encrypt-headers") as HTMLInputElement;
     expect(el.disabled).toBe(true);
+  });
+});
+
+describe("syncSettingsCompressionControlsForFormat", () => {
+  function disabled(id: string): boolean {
+    return (document.getElementById(id) as HTMLSelectElement).disabled;
+  }
+
+  it("enables every control for 7z", () => {
+    setSelectValue("s-method", "lzma2");
+    syncSettingsCompressionControlsForFormat("7z");
+    expect(disabled("s-method")).toBe(false);
+    expect(disabled("s-dict")).toBe(false);
+    expect(disabled("s-word-size")).toBe(false);
+    expect(disabled("s-solid")).toBe(false);
+    expect(disabled("s-encrypt-headers")).toBe(false);
+  });
+
+  it("greys out everything but level and threads for freeace", () => {
+    setSelectValue("s-level", "0");
+    syncSettingsCompressionControlsForFormat("freeace");
+    expect(disabled("s-method")).toBe(true);
+    expect(disabled("s-dict")).toBe(true);
+    expect(disabled("s-word-size")).toBe(true);
+    expect(disabled("s-solid")).toBe(true);
+    expect(disabled("s-encrypt-headers")).toBe(true);
+    expect(disabled("s-level")).toBe(false);
+    expect(disabled("s-threads")).toBe(false);
+    // Gleipnir has no store mode, so "0 - Store" is bumped to Normal.
+    expect(getSelectValue("s-level")).toBe("5");
+  });
+
+  it("keeps dictionary available for zip only with the lzma method", () => {
+    setSelectValue("s-method", "deflate");
+    syncSettingsCompressionControlsForFormat("zip");
+    expect(disabled("s-dict")).toBe(true);
+    expect(disabled("s-word-size")).toBe(false);
+    expect(disabled("s-solid")).toBe(true);
+
+    setSelectValue("s-method", "lzma");
+    syncSettingsCompressionControlsForFormat("zip");
+    expect(disabled("s-dict")).toBe(false);
+  });
+
+  it("re-enables controls when switching back from freeace", () => {
+    syncSettingsCompressionControlsForFormat("freeace");
+    syncSettingsCompressionControlsForFormat("7z");
+    expect(disabled("s-method")).toBe(false);
+    expect(disabled("s-dict")).toBe(false);
+    expect(disabled("s-solid")).toBe(false);
   });
 });
 

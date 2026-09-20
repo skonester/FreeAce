@@ -10,9 +10,15 @@
 - After upgrading to **Visual Studio 2026**, re-check Visual Studio Installer → **Modify** →
   **Desktop development with C++** includes **C++ CMake tools for Windows** (updates can drop
   optional components; an old VS 2022 `cmake` on PATH stops working when 2022 is removed).
-- **Windows SDK** (`makeappx.exe`) for Win11 sparse context-menu packages
+- **Windows SDK** (`makeappx.exe`) only if building the optional, signed Win11
+  sparse context-menu packages (`npm run build:win:context-menu`)
 - Node.js `^22.22.2 || ^24.15.0 || >=26` (`engines.node` in package.json)
-- Rust (rustup) + Visual Studio Build Tools (clang: x64 and arm64)
+- Rust (rustup) with the **MSVC** host (`x86_64-pc-windows-msvc`) + Visual Studio
+  Build Tools. `rust-toolchain.toml` pins `stable`, which resolves against the
+  rustup default host; a `-gnu` host fails with `dlltool.exe: program not found`.
+  Fix with `rustup set default-host x86_64-pc-windows-msvc`.
+- Plain unsigned installer: `npm run tauri:build` needs none of the signing
+  environment variables described below.
 
 ## macOS
 

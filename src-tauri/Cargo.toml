@@ -2,8 +2,8 @@
 name = "freeace"
 version = "0.6.2"
 description = "Cross-platform 7z + FreeAce GUI built with Tauri."
-license = "MPL-2.0"
-authors = ["BurntToasters <code@rosie.run>"]
+license = "GPL-3.0-or-later"
+authors = ["Skonester"]
 edition = "2021"
 
 [build-dependencies]

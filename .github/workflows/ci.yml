@@ -115,8 +115,6 @@ jobs:
       - name: Compile Finder Sync extension smoke
         if: runner.os == 'macOS'
         run: npm run prepare:macos:finder-sync
-      # Empty stubs only: CI never builds/signs the real Win11 shell package.
-      - run: npm run prepare:win-shell-stubs
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
       - run: npm run test:e2e
@@ -139,7 +137,9 @@ jobs:
       - name: Published updater feed sanity
         run: npm run validate:updater:live
 
-  # Unsigned compile smoke only: not a release. Signed NSIS/DMG/AppImage stay on build VMs.
+  # Unsigned compile smoke for every supported OS: not a release. Windows
+  # installers come from windows-build.yml; macOS/Linux bundles are built
+  # locally with the build:mac:* / build:linux* scripts.
   smoke-build:
     needs: quality-gate
     strategy:
@@ -215,7 +215,6 @@ jobs:
           }
           cmake -S src-tauri/windows/shell -B src-tauri/windows/shell/build-ci -A ${{ matrix.cmake_arch }}
           cmake --build src-tauri/windows/shell/build-ci --config Release
-      - run: npm run prepare:win-shell-stubs
       - name: Unsigned tauri build (no bundle)
         run: npx tauri build --no-bundle
       - name: Verify host sidecar and smoke binary

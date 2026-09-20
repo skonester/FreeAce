@@ -1,5 +1,12 @@
 import { $ } from "./utils";
 import { getCompressionSecuritySupport } from "./compression-security";
+import {
+  formatSupportsDictionary,
+  formatSupportsSolid,
+  formatSupportsStoreLevel,
+  formatSupportsWordSize,
+  supportedMethodsForFormat,
+} from "./archive/format-capabilities";
 import { state } from "./state";
 import type { CustomPreset } from "./settings-model";
 
@@ -121,19 +128,7 @@ export function updateCompressionOptionsForFormat(format: string) {
   const currentSolid = solidSelect.value;
   const currentLevel = levelSelect.value;
 
-  const validMethods: Record<string, string[]> = {
-    // PPMd/BZip2 need different memory/order controls than this form exposes.
-    // Offering them with generic dictionary/word-size fields generated invalid
-    // native commands, so keep only methods this UI can configure correctly.
-    "7z": ["lzma2", "lzma"],
-    zip: ["deflate", "lzma"],
-    tar: [],
-    gzip: [],
-    bzip2: [],
-    xz: [],
-  };
-
-  const methods = validMethods[format] || [];
+  const methods = supportedMethodsForFormat(format);
 
   methodSelect.innerHTML = "";
   if (methods.length > 0) {
@@ -168,10 +163,10 @@ export function updateCompressionOptionsForFormat(format: string) {
     methodSelect.disabled = true;
   }
 
-  const dictionarySupported =
-    format === "7z" ||
-    format === "xz" ||
-    (format === "zip" && methodSelect.value === "lzma");
+  const dictionarySupported = formatSupportsDictionary(
+    format,
+    methodSelect.value,
+  );
   dictSelect.disabled = !dictionarySupported;
   if (dictionarySupported && currentDict) {
     dictSelect.value = currentDict;
@@ -179,8 +174,7 @@ export function updateCompressionOptionsForFormat(format: string) {
     dictSelect.value = "";
   }
 
-  const wordSizeSupported =
-    format === "7z" || format === "xz" || format === "gzip" || format === "zip";
+  const wordSizeSupported = formatSupportsWordSize(format);
   wordSizeSelect.disabled = !wordSizeSupported;
   if (wordSizeSupported && currentWordSize) {
     wordSizeSelect.value = currentWordSize;
@@ -192,26 +186,14 @@ export function updateCompressionOptionsForFormat(format: string) {
     solidSelect.value = currentSolid;
   }
 
-  // Solid mode is only supported for 7z archives
-  const solidSupported = format === "7z";
+  const solidSupported = formatSupportsSolid(format);
   solidSelect.disabled = !solidSupported;
   if (!solidSupported) {
     solidSelect.value = "off";
   }
 
-  if (
-    format === "tar" ||
-    format === "gzip" ||
-    format === "bzip2" ||
-    format === "xz" ||
-    // Gleipnir has no store/no-compression mode -- its presets run -1
-    // (fastest) through -9 (smallest) -- so "0 - Store" would silently
-    // compress anyway under a label that promised it wouldn't.
-    format === "freeace"
-  ) {
-    if (currentLevel === "0") {
-      levelSelect.value = "5";
-    }
+  if (!formatSupportsStoreLevel(format) && currentLevel === "0") {
+    levelSelect.value = "5";
   }
 
   updateSecurityControlsForFormat(format);

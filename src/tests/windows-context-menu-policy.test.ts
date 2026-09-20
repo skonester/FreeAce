@@ -87,24 +87,16 @@ describe("Windows 11 context-menu manifest", () => {
     const tauriBuild = read("scripts/tauri-windows-build.js");
     const verify = read("scripts/verify-windows-authenticode.ps1");
     const sign = read("scripts/windows-artifact-sign.ps1");
-    const tauriConfig = read("src-tauri/tauri.windows.conf.json");
     const packageJson = JSON.parse(read("package.json")) as {
       scripts: Record<string, string>;
     };
-    const packageConsumers = [
-      build,
-      stubs,
-      tauriBuild,
-      verify,
-      sign,
-      tauriConfig,
-    ];
+    const packageConsumers = [build, stubs, tauriBuild, verify, sign];
 
     for (const contents of packageConsumers) {
       expect(contents).toContain("FreeAceContextMenu.msix");
       expect(contents).toContain("FreeAceExtractContextMenu.msix");
     }
-    for (const contents of [build, stubs, tauriBuild, verify, tauriConfig]) {
+    for (const contents of [build, stubs, tauriBuild, verify]) {
       expect(contents).toContain("freeace_shell.dll");
       expect(contents).toContain("freeace_extract_shell.dll");
     }
@@ -119,27 +111,41 @@ describe("Windows 11 context-menu manifest", () => {
     expect(registration).toContain("run.rosie.freeace.extractmenu");
   });
 
-  it("installs shell payloads side by side so updates cannot overwrite loaded DLLs", () => {
+  it("does not bundle the unsigned Win11 sparse-package payloads", () => {
+    // Windows only registers sparse MSIX identities that are Authenticode
+    // signed, so unsigned builds ship no shell payloads at all. The NSIS hook
+    // then skips the modern-menu step and the classic verbs stay in place.
     const read = (file: string) =>
       fs.readFileSync(path.resolve(process.cwd(), file), "utf8");
     const tauriConfig = JSON.parse(
       read("src-tauri/tauri.windows.conf.json"),
     ) as {
-      bundle: { resources: Record<string, string> };
+      bundle: {
+        resources: Record<string, string>;
+        windows?: { signCommand?: unknown };
+      };
     };
-    const packageVersion = (
-      JSON.parse(read("package.json")) as { version: string }
-    ).version;
+    const packageJson = JSON.parse(read("package.json")) as {
+      scripts: Record<string, string>;
+    };
     const hooks = read("src-tauri/windows/nsis-hooks.nsh");
 
-    const shellDestinations = Object.entries(tauriConfig.bundle.resources)
-      .filter(([source]) => source !== "binaries/7z.dll")
-      .map(([, destination]) => destination);
-    for (const destination of shellDestinations) {
-      expect(destination.startsWith(`shell-${packageVersion}/`)).toBe(true);
-      expect(destination).not.toContain("${VERSION}");
-    }
-    expect(tauriConfig.bundle.resources["binaries/7z.dll"]).toBe("7z.dll");
+    expect(Object.keys(tauriConfig.bundle.resources)).toEqual([
+      "binaries/7z.dll",
+    ]);
+    expect(tauriConfig.bundle.windows?.signCommand).toBeUndefined();
+    expect(packageJson.scripts["tauri:build"]).not.toContain(
+      "prepare:win-shell-stubs",
+    );
+    expect(hooks).toContain(
+      'IfFileExists "$INSTDIR\\shell-${VERSION}\\FreeAceContextMenu.msix" 0 freeace_skip_win11_menu',
+    );
+  });
+
+  it("keeps side-by-side shell payload handling in the installer hooks", () => {
+    const read = (file: string) =>
+      fs.readFileSync(path.resolve(process.cwd(), file), "utf8");
+    const hooks = read("src-tauri/windows/nsis-hooks.nsh");
     expect(hooks).toContain('StrCpy $R9 "$INSTDIR\\shell-${VERSION}"');
     expect(hooks).toContain("!macro NSIS_HOOK_PREINSTALL");
     expect(hooks).toContain("!macro NSIS_HOOK_PREUNINSTALL");

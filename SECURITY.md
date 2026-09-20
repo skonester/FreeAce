@@ -3,9 +3,9 @@
 ## Reporting a vulnerability
 
 Report security issues privately via GitHub's **Report a vulnerability** advisory
-flow (Security tab) or by email to [code@rosie.run](mailto:code@rosie.run).
-Please do not open public issues for undisclosed vulnerabilities. Include
-reproduction steps and affected version/platform.
+flow (Security tab of https://github.com/skonester/FreeAce). Please do not open
+public issues for undisclosed vulnerabilities. Include reproduction steps and
+affected version/platform.
 
 ## Threat model
 

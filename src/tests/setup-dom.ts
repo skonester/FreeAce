@@ -187,7 +187,7 @@ const METHOD_OPTIONS = ["lzma2", "lzma", "ppmd", "bzip2", "deflate"];
 const DICT_OPTIONS = ["", "16m", "32m", "64m", "128m", "256m", "512m"];
 const WORD_SIZE_OPTIONS = ["", "16", "32", "64", "128", "256"];
 const SOLID_OPTIONS = ["off", "4g", "16g", "solid"];
-const FORMAT_OPTIONS = ["7z", "zip", "tar", "gzip", "bzip2", "xz"];
+const FORMAT_OPTIONS = ["7z", "zip", "tar", "gzip", "bzip2", "xz", "freeace"];
 const PATH_MODE_OPTIONS = ["relative", "absolute"];
 
 addSelect("format", FORMAT_OPTIONS);

@@ -10,6 +10,13 @@ import {
   parseSettingsRaw,
 } from "./settings-model";
 import { getCompressionSecuritySupport } from "./compression-security";
+import {
+  formatSupportsDictionary,
+  formatSupportsSolid,
+  formatSupportsStoreLevel,
+  formatSupportsWordSize,
+  supportedMethodsForFormat,
+} from "./archive/format-capabilities";
 import { syncWorkspaceWindowFx } from "./window-fx";
 
 let settingsModalBasicWindowEffects: boolean | null = null;
@@ -160,7 +167,7 @@ export function populateSettingsModal() {
     basicFx.checked = state.currentSettings.basicWindowEffects;
   }
   syncQuickExtractWarmIdleControl();
-  syncSettingsSecurityControlsForFormat(
+  syncSettingsCompressionControlsForFormat(
     $<HTMLSelectElement>("s-format").value as UserSettings["format"],
   );
   void syncBasicWindowEffectsVisibility();
@@ -182,6 +189,44 @@ export function syncSettingsSecurityControlsForFormat(
     encryptHeadersCheckbox.checked = false;
   }
   encryptHeadersCheckbox.disabled = !support.encryptHeaders;
+}
+
+/**
+ * Mirror of updateCompressionOptionsForFormat (src/presets.ts) for the
+ * Settings › Compression › Defaults panel: grey out the 7z-specific controls
+ * a format cannot use so the saved defaults don't promise knobs the backend
+ * ignores. Unlike the main form this keeps the option lists intact and only
+ * toggles `disabled`, so the user's previous choice survives switching back.
+ */
+export function syncSettingsCompressionControlsForFormat(
+  format: UserSettings["format"],
+) {
+  syncSettingsSecurityControlsForFormat(format);
+
+  const methodSelect = $<HTMLSelectElement>("s-method");
+  const dictSelect = $<HTMLSelectElement>("s-dict");
+  const wordSizeSelect = $<HTMLSelectElement>("s-word-size");
+  const solidSelect = $<HTMLSelectElement>("s-solid");
+  const levelSelect = $<HTMLSelectElement>("s-level");
+
+  methodSelect.disabled = supportedMethodsForFormat(format).length === 0;
+  dictSelect.disabled = !formatSupportsDictionary(format, methodSelect.value);
+  wordSizeSelect.disabled = !formatSupportsWordSize(format);
+  solidSelect.disabled = !formatSupportsSolid(format);
+  // Level is the one control every backend honours, so a value the format
+  // cannot express is corrected rather than merely greyed out.
+  if (!formatSupportsStoreLevel(format) && levelSelect.value === "0") {
+    levelSelect.value = "5";
+  }
+
+  const hint = document.getElementById("s-format-hint");
+  if (hint) {
+    hint.textContent =
+      format === "freeace"
+        ? "FreeAce archives only use compression level and threads; the other controls are ignored."
+        : "";
+    hint.hidden = hint.textContent === "";
+  }
 }
 
 export function readSettingsModal(): UserSettings {

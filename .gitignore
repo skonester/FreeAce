@@ -29,6 +29,9 @@ node_modules/
 # dotenv environment variable files
 .env
 .env.*
+# Tauri updater private keys (from `tauri signer generate`) never belong in the repo.
+*.key
+*.key.pub
 !.env.example
 
 # Vite logs

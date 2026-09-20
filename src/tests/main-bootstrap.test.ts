@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => {
         }
       }),
       populateSettingsModal: vi.fn(),
-      syncSettingsSecurityControlsForFormat: vi.fn(),
+      syncSettingsCompressionControlsForFormat: vi.fn(),
     },
     ui: {
       log: vi.fn(),
@@ -137,8 +137,8 @@ vi.mock("../settings", () => ({
   closeSettingsModal: mocks.settings.closeSettingsModal,
   toggleSettingsModal: mocks.settings.toggleSettingsModal,
   populateSettingsModal: mocks.settings.populateSettingsModal,
-  syncSettingsSecurityControlsForFormat:
-    mocks.settings.syncSettingsSecurityControlsForFormat,
+  syncSettingsCompressionControlsForFormat:
+    mocks.settings.syncSettingsCompressionControlsForFormat,
 }));
 
 vi.mock("../ui", () => ({
@@ -412,6 +412,7 @@ function ensureMainDomElements(): void {
   ensureElement("split-custom-field", "div");
   ensureElement("split-custom", "input");
   ensureSelect("s-format", ["7z", "zip", "tar"]);
+  ensureSelect("s-method", ["", "lzma2"]);
   for (const id of ["level", "method", "dict", "word-size", "solid"]) {
     ensureSelect(id, [""]);
   }
@@ -543,7 +544,7 @@ beforeEach(async () => {
     }
   });
   mocks.settings.populateSettingsModal.mockReset();
-  mocks.settings.syncSettingsSecurityControlsForFormat.mockReset();
+  mocks.settings.syncSettingsCompressionControlsForFormat.mockReset();
 
   mocks.ui.log.mockReset();
   mocks.ui.devLog.mockReset();
@@ -1099,7 +1100,7 @@ describe("main bootstrap", () => {
       new Event("change", { bubbles: true }),
     );
     expect(
-      mocks.settings.syncSettingsSecurityControlsForFormat,
+      mocks.settings.syncSettingsCompressionControlsForFormat,
     ).toHaveBeenCalledWith("tar");
 
     state.lastAutoOutputPath = "/tmp/auto.7z";

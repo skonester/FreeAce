@@ -1,8 +1,10 @@
 name: Windows build
 
-# Manual/on-demand Windows build. Produces the plain app .exe and the
-# unsigned NSIS installer as downloadable artifacts. No code signing, no
-# release publishing, no context-menu shell extension -- just the two files.
+# Primary build for FreeAce: unsigned NSIS installers for Windows x64 and
+# ARM64 on every push to main, plus on demand. No code signing, no release
+# publishing, no Win11 sparse context-menu package (that needs Authenticode).
+# Users download the artifact and run it; SmartScreen shows the usual
+# unknown-publisher prompt for unsigned installers.
 
 on:
   workflow_dispatch:
@@ -16,15 +18,20 @@ env:
   NODE_VERSION: "24.16.0"
   NPM_VERSION: "12.0.2"
   RUST_VERSION: "stable"
-  # This workflow produces unsigned artifacts only -- see header comment.
-  # FREEACE_NON_RELEASE_BUILD exempts it from release-policy.cjs's stable-release
-  # guard, which otherwise refuses SKIP_WIN_CODESIGN on a non-prerelease version.
-  SKIP_WIN_CODESIGN: "1"
-  FREEACE_NON_RELEASE_BUILD: "1"
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            arch: arm64
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -42,39 +49,34 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.target }}
 
       - run: npm ci --ignore-scripts
 
-      # Real 7z + Gleipnir sidecars, built from source for this runner.
+      # Same steps `npm run tauri:build` runs locally, minus sync-version
+      # (the committed version files are the source of truth in CI).
+      - run: npm run licenses
       - run: npm run prepare:7z
       - run: npm run prepare:freeace
 
-      # Empty stubs: skips the signed Win11 context-menu shell extension,
-      # which is not built by this workflow.
-      - run: npm run prepare:win-shell-stubs
-
-      - name: Disable updater artifact signing for this unsigned build
-        shell: pwsh
-        run: |
-          Set-Content -Path ci-no-updater.conf.json -Encoding utf8 -Value '{"bundle":{"createUpdaterArtifacts":false}}'
-
       - name: Build app + NSIS installer
-        run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis --config ci-no-updater.conf.json
+        run: npx tauri build --target ${{ matrix.target }} --bundles nsis
 
       - name: Upload app exe
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: freeace-windows-x64-exe
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/freeace.exe
+          name: freeace-windows-${{ matrix.arch }}-exe
+          path: src-tauri/target/${{ matrix.target }}/release/freeace.exe
           if-no-files-found: error
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: freeace-windows-x64-installer
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          name: freeace-windows-${{ matrix.arch }}-installer
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
           if-no-files-found: error

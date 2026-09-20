@@ -11,7 +11,7 @@ import {
   closeSettingsModal,
   toggleSettingsModal,
   populateSettingsModal,
-  syncSettingsSecurityControlsForFormat,
+  syncSettingsCompressionControlsForFormat,
 } from "./settings";
 import {
   log,
@@ -373,7 +373,13 @@ export function wireEvents() {
   });
 
   $<HTMLSelectElement>("s-format").addEventListener("change", () => {
-    syncSettingsSecurityControlsForFormat(
+    syncSettingsCompressionControlsForFormat(
+      $<HTMLSelectElement>("s-format")
+        .value as typeof state.currentSettings.format,
+    );
+  });
+  $<HTMLSelectElement>("s-method").addEventListener("change", () => {
+    syncSettingsCompressionControlsForFormat(
       $<HTMLSelectElement>("s-format")
         .value as typeof state.currentSettings.format,
     );

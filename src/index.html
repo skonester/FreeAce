@@ -567,8 +567,11 @@
                     <div class="setting-info">
                       <span class="setting-title">CPU benchmark</span>
                       <span class="setting-desc" id="benchmark-result"
-                        >Measure compression speed to help pick a thread
-                        count.</span
+                        >Runs the built-in 7-Zip benchmark and reports a speed
+                        score (higher is faster), real compress / decompress
+                        throughput, and how many CPU threads were kept busy. Use
+                        it to sanity-check the Threads default under
+                        Compression.</span
                       >
                     </div>
                     <div class="setting-actions">
@@ -653,6 +656,7 @@
                         <option value="gzip">gzip</option>
                         <option value="bzip2">bzip2</option>
                         <option value="xz">xz</option>
+                        <option value="freeace">freeace</option>
                       </select>
                     </div>
                     <div class="field">
@@ -728,6 +732,7 @@
                          FreeAce now creates only safely relocatable archives. -->
                     <input id="s-path-mode" type="hidden" value="relative" />
                   </div>
+                  <p class="settings-hint" id="s-format-hint" hidden></p>
                 </section>
 
                 <section class="settings-section">
@@ -951,20 +956,15 @@
                     <div>
                       <h3 class="about-name">FreeAce</h3>
                       <span class="about-tagline"
-                        >A fast, focused 7z + FreeAce GUI</span
+                        >The file manager that grows on you!</span
                       >
                       <span class="about-credit"
-                        >Made with
-                        <i
-                          data-lucide="heart"
-                          class="lucide-icon text-danger"
-                        ></i>
-                        by BurntToasters /
+                        >Not affiliated with WinAce &middot;
                         <a
-                          href="https://rosie.run"
+                          href="https://github.com/skonester/freeace"
                           target="_blank"
                           rel="noopener"
-                          >rosie.run</a
+                          >github.com/skonester/freeace</a
                         ></span
                       >
                     </div>
@@ -984,7 +984,7 @@
                     </div>
                     <div class="settings-row">
                       <span class="settings-label">License</span>
-                      <span class="settings-value">MPL-2.0</span>
+                      <span class="settings-value">GPL-3.0-or-later</span>
                     </div>
                   </div>
 
@@ -1514,15 +1514,10 @@
               <img
                 class="basic-home__mark"
                 src="/freeace_default-logo.png"
-                width="48"
-                height="48"
-                alt=""
-                aria-hidden="true"
+                width="96"
+                height="96"
+                alt="FreeAce"
               />
-              <h2 class="basic-home__title">Drop a file here</h2>
-              <p class="basic-home__subtitle">
-                Open an archive, or make a new one: FreeAce handles the rest.
-              </p>
             </div>
             <div
               class="basic-dropzone"

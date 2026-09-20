@@ -106,13 +106,21 @@ export function updateWindowsShellResourceDestinations(config, version) {
     throw new Error("Windows Tauri config is missing bundle.resources map");
   }
 
+  // The Win11 sparse-package context menu needs Authenticode-signed payloads,
+  // so unsigned builds leave it out of bundle.resources entirely (the NSIS
+  // hook then keeps the classic verbs). Nothing to version in that case.
+  const shellSources = Object.keys(WINDOWS_SHELL_RESOURCES);
+  const present = shellSources.filter((source) => source in resources);
+  if (present.length === 0) return config;
+  if (present.length !== shellSources.length) {
+    const missing = shellSources.filter((source) => !(source in resources));
+    throw new Error(
+      `Windows Tauri config is missing shell resource: ${missing[0]}`,
+    );
+  }
+
   const updatedResources = { ...resources };
   for (const [source, filename] of Object.entries(WINDOWS_SHELL_RESOURCES)) {
-    if (!(source in resources)) {
-      throw new Error(
-        `Windows Tauri config is missing shell resource: ${source}`,
-      );
-    }
     updatedResources[source] = `shell-${version}/${filename}`;
   }
 

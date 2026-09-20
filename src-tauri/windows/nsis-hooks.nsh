@@ -262,6 +262,10 @@
   !insertmacro FREEACE_REGISTER_PROGID_OPEN ".gz"
   !insertmacro FREEACE_REGISTER_PROGID_OPEN ".bz2"
   !insertmacro FREEACE_REGISTER_PROGID_OPEN ".xz"
+  !insertmacro FREEACE_REGISTER_PROGID_OPEN ".rar"
+  !insertmacro FREEACE_REGISTER_PROGID_OPEN ".tgz"
+  !insertmacro FREEACE_REGISTER_PROGID_OPEN ".tbz2"
+  !insertmacro FREEACE_REGISTER_PROGID_OPEN ".txz"
   !insertmacro FREEACE_REGISTER_COMPRESS_VERBS
   !insertmacro FREEACE_REGISTER_WIN11_CONTEXT_MENU
   IntCmp $R6 1 freeace_postinstall_win11_ok 0 0

@@ -205,10 +205,23 @@ describe("Windows shell resource destinations", () => {
     expect(config.bundle.resources).toBe(resources);
   });
 
-  it("fails when a required shell artifact is removed from packaging", () => {
+  it("leaves the config alone when the shell extension is not bundled", () => {
+    const config = { bundle: { resources: { "binaries/7z.dll": "7z.dll" } } };
+    expect(
+      updateWindowsShellResourceDestinations(config, "0.6.0-beta.14"),
+    ).toBe(config);
+  });
+
+  it("fails when only some shell artifacts are packaged", () => {
     expect(() =>
       updateWindowsShellResourceDestinations(
-        { bundle: { resources: {} } },
+        {
+          bundle: {
+            resources: {
+              "windows/shell/out/freeace_shell.dll": "old/freeace_shell.dll",
+            },
+          },
+        },
         "0.6.0-beta.14",
       ),
     ).toThrow(/missing shell resource/);

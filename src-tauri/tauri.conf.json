@@ -32,6 +32,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Skonester",
     "targets": ["dmg", "app", "nsis", "appimage", "deb", "rpm"],
     "icon": [
       "icons/32x32.png",
@@ -94,7 +95,7 @@
         "description": "XZ Compressed TAR Archive"
       }
     ],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "windows": {
       "nsis": {
         "installMode": "currentUser",
@@ -131,7 +132,7 @@
         "https://github.com/skonester/FreeAce/releases/download/v{{current_version}}/latest-{{target}}-{{arch}}.json",
         "https://github.com/skonester/FreeAce/releases/download/v{{current_version}}/latest-{{target}}.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5RTAwQ0YyRjU4NENCNkMKUldSc3k0VDE4Z3pnK2NQaXdzYXkzWklabm9tTTZvSTErcmNQSkZFL2d3VnpXNnlHL2R0WjAwMHcK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyNEUxOUU0NDgxNTU5REIKUldUYldSVkk1QmxPRWs1ZUhFelRqR3g4SU9TOEI1clE1RnFJTnFJM1hjOVVqZkRQV01KQVo3akIK"
     }
   }
 }
