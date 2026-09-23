@@ -6,7 +6,7 @@ A cross-platform 7z + FreeAce GUI built with Tauri.
   <table>
     <tr>
       <td valign="middle" align="center" width="220">
-        <img src="./media/icon.png"
+        <img src="./media/GPL3.png"
              alt="FreeAce logo" width="140" />
       </td>
       <td valign="middle" align="center">

@@ -5,7 +5,7 @@ FreeAce is licensed under the **GNU General Public License v3.0 or later**
 
 ## Upstream code (MPL-2.0)
 
-FreeAce is a fork of the BurntToasters FreeAce project, which is licensed under
+FreeAce is a fork of the BurntToasters project, which is licensed under
 the Mozilla Public License 2.0. That code is still covered by the MPL-2.0 —
 the full text is kept in [`LICENSE.MPL-2.0`](LICENSE.MPL-2.0). MPL-2.0
 section 3.3 permits distributing MPL-covered code as part of a Larger Work
