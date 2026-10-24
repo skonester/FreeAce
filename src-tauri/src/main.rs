@@ -5,6 +5,7 @@ mod archive_detect;
 #[cfg(target_os = "macos")]
 mod finder_sync_requests;
 mod fs_secure;
+mod in_place;
 mod launch;
 mod logging;
 #[cfg(target_os = "macos")]
@@ -252,6 +253,7 @@ fn main() {
         .manage(LogFileLock(Mutex::new(())))
         .manage(RunningProcess::new())
         .manage(process::RunningFreeace::new())
+        .manage(in_place::InPlacePlans::default())
         .setup(move |app| {
             // Primary instance only reaches setup. Resolve shell handoffs here
             // (and in emit_open_paths); collect_cli_context must not consume them
@@ -377,6 +379,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            in_place::plan_in_place_extract,
+            in_place::run_in_place_extract,
+            in_place::discard_in_place_plan,
             process::run_7z,
             process::cancel_7z,
             process::is_7z_running,

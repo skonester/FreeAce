@@ -29,6 +29,7 @@ split into focused modules:
 | `launch/`           | CLI/file-association routing, extract windows, pending-path queues, quick-extract warm-idle / tray          |
 | `platform/`         | Platform/OS-integration queries, defaults commands, xdg-mime / macOS UTI                                    |
 | `output.rs`         | Byte-bounded, UTF-8-safe output buffering                                                                   |
+| `in_place.rs`       | Opt-in consuming extraction through vendored HatchZip core; space review tokens and resume                 |
 | `window_fx.rs`      | Basic-mode native glass (macOS vibrancy, Windows Mica/Acrylic); Linux stays opaque                          |
 | `path_safety.rs`    | Symlink / reparse rejection; Unix `O_NOFOLLOW` opens for promote                                            |
 

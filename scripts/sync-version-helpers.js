@@ -235,26 +235,31 @@ export function syncChangelogForVersion(changelog, version) {
 
   const tableStart = changelog.indexOf("# ⬇️ Downloads");
   const tableEnd = changelog.indexOf("\n> macOS");
-  if (tableStart === -1 || tableEnd === -1 || tableEnd <= tableStart) {
+  if (tableStart !== -1 && (tableEnd === -1 || tableEnd <= tableStart)) {
     throw new Error("CHANGELOG.md download table markers not found");
   }
 
-  const before = changelog.slice(0, tableStart);
-  const table = changelog.slice(tableStart, tableEnd);
-  const after = changelog.slice(tableEnd);
-  const syncedTable = table.replace(
-    /\/releases\/download\/v[^/]+\//g,
-    `/releases/download/${tag}/`,
-  );
-  let updated = before + syncedTable + after;
+  let updated = changelog;
+  if (tableStart !== -1) {
+    const before = changelog.slice(0, tableStart);
+    const table = changelog.slice(tableStart, tableEnd);
+    const after = changelog.slice(tableEnd);
+    const syncedTable = table.replace(
+      /\/releases\/download\/v[^/]+\//g,
+      `/releases/download/${tag}/`,
+    );
+    updated = before + syncedTable + after;
+  }
 
   if (!updated.includes(sectionHeading)) {
-    if (!updated.includes(CHANGELOG_INTRO_ANCHOR)) {
+    const eol = updated.includes("\r\n") ? "\r\n" : "\n";
+    const introAnchor = CHANGELOG_INTRO_ANCHOR.replaceAll("\n", eol);
+    if (!updated.includes(introAnchor)) {
       throw new Error("CHANGELOG.md intro anchor not found");
     }
     updated = updated.replace(
-      CHANGELOG_INTRO_ANCHOR,
-      `${CHANGELOG_INTRO_ANCHOR}${sectionHeading}\n\n- **Fix:** (add release notes)\n\n`,
+      introAnchor,
+      `${introAnchor}${sectionHeading}${eol}${eol}- **Fix:** (add release notes)${eol}${eol}`,
     );
   }
 

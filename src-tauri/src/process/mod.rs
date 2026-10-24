@@ -133,6 +133,7 @@ pub struct ProcessState {
     pub preparing: bool,
     pub cancelling: bool,
     pub owner_label: Option<String>,
+    pub(crate) in_place_stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub abort_reason: Option<String>,
     /// Set while the owning `run_7z` future is alive. An exited child may only
     /// be reaped after that owner has been dropped; otherwise its finalizer can
@@ -200,6 +201,7 @@ impl ProcessState {
             preparing: false,
             cancelling: false,
             owner_label: None,
+            in_place_stop: None,
             abort_reason: None,
             operation_liveness: None,
             update_reserved_at: None,
@@ -214,6 +216,7 @@ impl ProcessState {
         self.preparing = false;
         self.cancelling = false;
         self.owner_label = None;
+        self.in_place_stop = None;
         self.abort_reason = None;
         self.operation_liveness = None;
         self.update_reserved_at = None;

@@ -320,6 +320,23 @@ describe("CHANGELOG version synchronization", () => {
     expect(synced).toContain("## Changes in `v0.6.1-beta.2:`");
     expect(synced).toContain("## Changes in `v0.6.1-beta.1:`");
   });
+
+  it("preserves a changelog without a download table when the version matches", () => {
+    const notes = `${intro}## Changes in \`v0.6.3:\`\n\n- In-place extraction\n`;
+    expect(syncChangelogForVersion(notes, "0.6.3")).toBe(notes);
+  });
+
+  it("inserts a new version into a CRLF changelog without a download table", () => {
+    const notes =
+      `${intro}## Changes in \`v0.6.2:\`\n\n- Previous notes\n`.replaceAll(
+        "\n",
+        "\r\n",
+      );
+    const synced = syncChangelogForVersion(notes, "0.6.3");
+    expect(synced).toContain("## Changes in `v0.6.3:`\r\n");
+    expect(synced).toContain("## Changes in `v0.6.2:`\r\n");
+    expect(synced).not.toContain("Downloads");
+  });
 });
 
 describe("package-lock.json version", () => {

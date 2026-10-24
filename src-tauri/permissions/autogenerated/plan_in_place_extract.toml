@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plan-in-place-extract"
+description = "Enables the plan_in_place_extract command without any pre-configured scope."
+commands.allow = ["plan_in_place_extract"]
+
+[[permission]]
+identifier = "deny-plan-in-place-extract"
+description = "Denies the plan_in_place_extract command without any pre-configured scope."
+commands.deny = ["plan_in_place_extract"]

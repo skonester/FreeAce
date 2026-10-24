@@ -2124,6 +2124,9 @@ pub fn cancel_7z(
                 );
             }
         }
+        if let Some(stop) = &process.in_place_stop {
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         match process.child.as_ref().map(Arc::clone) {
             Some(child) => {
                 process.cancelling = true;

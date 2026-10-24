@@ -19,7 +19,9 @@ export function validateChangelogForVersion(changelog, version) {
   const tag = `v${version}`;
   // Same exact heading the draft-notes extractor reads (ensure-draft-release).
   const sectionOk = changelog.includes(`## Changes in \`${tag}:\``);
-  const urlsOk = changelog.includes(`/download/${tag}/`);
+  const hasDownloads =
+    changelog.includes("# ⬇️ Downloads") || changelog.includes("/download/");
+  const urlsOk = !hasDownloads || changelog.includes(`/download/${tag}/`);
 
   if (!sectionOk) {
     errors.push(

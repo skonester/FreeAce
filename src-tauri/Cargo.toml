@@ -1,6 +1,6 @@
 [package]
 name = "freeace"
-version = "0.6.2"
+version = "0.6.3"
 description = "Cross-platform 7z + FreeAce GUI built with Tauri."
 license = "GPL-3.0-or-later"
 authors = ["Skonester"]
@@ -23,6 +23,7 @@ tokio = { version = "1", features = ["time"] }
 shared_child = "1.1"
 getrandom = "0.3"
 sha2 = "0.10"
+hatchzip-core = { path = "../third_party/hatchzip-core" }
 # Tauri 2 already uses 0.6. Keeping one version avoids duplicate Objective-C
 # class symbols in the final macOS bundle.
 window-vibrancy = "0.6"
@@ -53,6 +54,8 @@ libc = "0.2"
 
 [dev-dependencies]
 minisign-verify = "0.3.0"
+zip = "9"
+tar = "0.4.46"
 
 [features]
 default = []

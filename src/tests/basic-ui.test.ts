@@ -1596,6 +1596,28 @@ describe("basic-ui drag and init wiring", () => {
     expect(state.operationPreparing).toBe(false);
   });
 
+  it("resumes in-place extraction without probing the consumed archive through 7-Zip", async () => {
+    state.inputs = ["/tmp/consumed.zip"];
+    uiMocks.runtime.mode = "extract";
+    setBasicView("extract");
+    const option = document.createElement("input");
+    option.id = "basic-extract-in-place";
+    option.type = "checkbox";
+    option.checked = true;
+    document.body.appendChild(option);
+    (document.getElementById("basic-extract-path") as HTMLInputElement).value =
+      "/tmp/original-output";
+    depMocks.runAction.mockResolvedValueOnce(undefined);
+
+    await handleBasicExtractAction();
+
+    expect(depMocks.runAction).toHaveBeenCalled();
+    expect(depMocks.validateArchivePaths).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(state.operationPreparing).toBe(false);
+    option.remove();
+  });
+
   it("uses typed compression destination without opening save dialog", async () => {
     state.inputs = ["/tmp/input.txt"];
     uiMocks.runtime.mode = "add";

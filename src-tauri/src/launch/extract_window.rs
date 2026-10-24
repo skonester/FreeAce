@@ -373,6 +373,9 @@ pub async fn cancel_owner_and_wait(
         if let Some(owner) = &process.owner_label {
             if owner == owner_label {
                 process.cancelling = true;
+                if let Some(stop) = &process.in_place_stop {
+                    stop.store(true, Ordering::Relaxed);
+                }
                 process.child.as_ref().map(std::sync::Arc::clone)
             } else {
                 None

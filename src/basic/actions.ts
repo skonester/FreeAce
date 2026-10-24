@@ -540,7 +540,12 @@ async function handleBasicExtractActionOnce(
   // (busy backend, runtime probe failure, IPC error) rather than confirming
   // the archive is plaintext; treat that the same as "encrypted" so a real
   // password requirement is never silently skipped.
-  const encryptionCheck = await isArchiveEncrypted(archive);
+  // A consumed archive is parsed through its saved index by the in-place
+  // engine. Ordinary 7-Zip probing cannot read that recovery view.
+  const inPlace = !!document.querySelector<HTMLInputElement>(
+    "#basic-extract-in-place",
+  )?.checked;
+  const encryptionCheck = inPlace ? false : await isArchiveEncrypted(archive);
   if (!isBasicPreparationCurrent(preparation)) return;
   const isEncrypted = encryptionCheck ?? true;
   if (encryptionCheck === null) {
@@ -549,7 +554,10 @@ async function handleBasicExtractActionOnce(
       "debug",
     );
   }
-  let password = "";
+  let password = inPlace
+    ? (document.querySelector<HTMLInputElement>("#basic-extract-password")
+        ?.value ?? "")
+    : "";
 
   if (isEncrypted) {
     let correctPassword = false;

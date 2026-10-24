@@ -28,6 +28,7 @@ import {
 import { sanitizeCommandArgsForPreview } from "./preview";
 import { confirmZipSymlinkRisk } from "./compress-fidelity";
 import { basename } from "../path-display";
+import { runInPlaceExtraction } from "./in-place";
 import type { ProgressUpdate } from "../progress-update";
 import {
   ensureRuntimeReady,
@@ -73,7 +74,10 @@ export async function runAction() {
 
   const mode = getMode();
 
-  if (mode === "extract" && state.inputs.length > 1) {
+  const inPlace =
+    mode === "extract" &&
+    !!document.querySelector<HTMLInputElement>("#extract-in-place")?.checked;
+  if (mode === "extract" && state.inputs.length > 1 && !inPlace) {
     return runBatchExtract();
   }
 
@@ -82,12 +86,31 @@ export async function runAction() {
       ? isFreeaceOutputPath(state.inputs[0] ?? "")
       : (document.getElementById("format") as HTMLSelectElement | null)
           ?.value === "freeace";
-  lastActionBackend = isFreeace ? "freeace" : "7z";
+  lastActionBackend = isFreeace && !inPlace ? "freeace" : "7z";
 
   state.batchCancelled = false;
   state.cancelRequested = false;
   setRunning(true);
   try {
+    if (inPlace) {
+      const outcome = await runInPlaceExtraction();
+      hideProgress();
+      if (outcome === "done") {
+        setStatus("Done", 2000);
+        showToast(
+          "In-place extraction complete. The archive was consumed.",
+          "success",
+        );
+      } else if (outcome === "paused") {
+        const detail =
+          "Keep the extracted files and recovery files. Select the first archive volume and the same destination with in-place extraction enabled to resume.";
+        setStatus("Cancelled", 0, detail);
+        showToast(`Extraction paused. ${detail}`, "info", 0);
+      } else {
+        setStatus("Cancelled", 2000);
+      }
+      return;
+    }
     if (!isFreeace && !(await ensureRuntimeReady())) return;
     if (state.cancelRequested) {
       setStatus("Cancelled", 2000);

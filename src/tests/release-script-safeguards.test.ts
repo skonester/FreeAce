@@ -351,7 +351,6 @@ describe("release script safeguards", () => {
     const changelog = fs.readFileSync("CHANGELOG.md", "utf8");
     const body = readChangelogReleaseBody();
     expect(body).toBe(changelog);
-    expect(body).toContain("# ⬇️ Downloads");
     expect(body).toContain(`## Changes in \`v${pkg.version}:\``);
     expect(body).toContain("## ℹ️ Release Info");
 
@@ -1399,6 +1398,17 @@ describe("release script safeguards", () => {
         "0.6.1-beta.6",
       ),
     ).not.toThrow();
+  });
+
+  it("validates CHANGELOG without downloads and still rejects stale download URLs", () => {
+    const notes = "## Changes in `v0.6.3:`\n\n- In-place extraction\n";
+    expect(validateChangelogForVersion(notes, "0.6.3")).toEqual([]);
+    expect(
+      validateChangelogForVersion(`${notes}/download/v0.6.2/app.exe`, "0.6.3"),
+    ).toEqual([expect.stringMatching(/download links/)]);
+    expect(validateChangelogForVersion(notes, "0.6.4")).toEqual([
+      expect.stringMatching(/missing section/),
+    ]);
   });
 
   it("rejects Beta banners, placeholders, and prerelease URLs on stable CHANGELOG", () => {

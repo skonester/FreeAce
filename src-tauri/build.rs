@@ -379,6 +379,9 @@ fn main() {
     println!("cargo:rustc-env=FREEACE_APP_GROUP_ID={app_group}");
     prepare_7z_binaries();
     const COMMANDS: &[&str] = &[
+        "plan_in_place_extract",
+        "run_in_place_extract",
+        "discard_in_place_plan",
         "run_7z",
         "cancel_7z",
         "is_7z_running",

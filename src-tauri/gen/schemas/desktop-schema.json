@@ -447,6 +447,12 @@
           "markdownDescription": "Enables the debug_console_window_open command without any pre-configured scope."
         },
         {
+          "description": "Enables the discard_in_place_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-discard-in-place-plan",
+          "markdownDescription": "Enables the discard_in_place_plan command without any pre-configured scope."
+        },
+        {
           "description": "Enables the drain_pending_paths command without any pre-configured scope.",
           "type": "string",
           "const": "allow-drain-pending-paths",
@@ -609,6 +615,12 @@
           "markdownDescription": "Enables the open_path command without any pre-configured scope."
         },
         {
+          "description": "Enables the plan_in_place_extract command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-plan-in-place-extract",
+          "markdownDescription": "Enables the plan_in_place_extract command without any pre-configured scope."
+        },
+        {
           "description": "Enables the probe_7z command without any pre-configured scope.",
           "type": "string",
           "const": "allow-probe-7z",
@@ -679,6 +691,12 @@
           "type": "string",
           "const": "allow-run-freeace",
           "markdownDescription": "Enables the run_freeace command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_in_place_extract command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-in-place-extract",
+          "markdownDescription": "Enables the run_in_place_extract command without any pre-configured scope."
         },
         {
           "description": "Enables the save_settings command without any pre-configured scope.",
@@ -769,6 +787,12 @@
           "type": "string",
           "const": "deny-debug-console-window-open",
           "markdownDescription": "Denies the debug_console_window_open command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the discard_in_place_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-discard-in-place-plan",
+          "markdownDescription": "Denies the discard_in_place_plan command without any pre-configured scope."
         },
         {
           "description": "Denies the drain_pending_paths command without any pre-configured scope.",
@@ -933,6 +957,12 @@
           "markdownDescription": "Denies the open_path command without any pre-configured scope."
         },
         {
+          "description": "Denies the plan_in_place_extract command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-plan-in-place-extract",
+          "markdownDescription": "Denies the plan_in_place_extract command without any pre-configured scope."
+        },
+        {
           "description": "Denies the probe_7z command without any pre-configured scope.",
           "type": "string",
           "const": "deny-probe-7z",
@@ -1003,6 +1033,12 @@
           "type": "string",
           "const": "deny-run-freeace",
           "markdownDescription": "Denies the run_freeace command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_in_place_extract command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-in-place-extract",
+          "markdownDescription": "Denies the run_in_place_extract command without any pre-configured scope."
         },
         {
           "description": "Denies the save_settings command without any pre-configured scope.",
