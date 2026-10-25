@@ -3,7 +3,12 @@ updates:
   - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: weekly
+      interval: monthly
+      time: "09:00"
+      timezone: America/Chicago
+    ignore:
+      # Keep the JavaScript updater aligned with the patched Rust updater.
+      - dependency-name: "@tauri-apps/plugin-updater"
     groups:
       dev-dependencies:
         dependency-type: development
@@ -14,7 +19,12 @@ updates:
   - package-ecosystem: cargo
     directory: "/src-tauri"
     schedule:
-      interval: weekly
+      interval: monthly
+      time: "09:00"
+      timezone: America/Chicago
+    ignore:
+      # Upgrade with Tauri so macOS links only one window-vibrancy version.
+      - dependency-name: window-vibrancy
     groups:
       tauri:
         patterns:
@@ -23,4 +33,6 @@ updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: weekly
+      interval: monthly
+      time: "09:00"
+      timezone: America/Chicago
