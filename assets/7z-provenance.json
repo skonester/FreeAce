@@ -61,6 +61,10 @@
       "source": "windows-arm64-installer",
       "member": "7z.exe"
     },
+    "win/arm64/7z.sfx": {
+      "source": "windows-arm64-installer",
+      "member": "7z.sfx"
+    },
     "win/x64/7z.dll": {
       "source": "windows-x64-installer",
       "member": "7z.dll"
@@ -68,6 +72,10 @@
     "win/x64/7z.exe": {
       "source": "windows-x64-installer",
       "member": "7z.exe"
+    },
+    "win/x64/7z.sfx": {
+      "source": "windows-x64-installer",
+      "member": "7z.sfx"
     }
   }
 }

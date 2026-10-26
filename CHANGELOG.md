@@ -1,6 +1,41 @@
 
 FreeAce! A cross platform 7Z gui frontend built on Tauri V2!
 
+## Changes in `v0.6.4:`
+
+### 2026-10-25 (10/25/26): Self-extracting archives, FreeAce in-place extraction, 0.6.4
+
+#### Implemented
+
+- Added **Self-extracting .exe** to Basic and Power compression on Windows, for the 7z and FreeAce formats. It is a per-archive choice and is never saved as a default. Turning it on renames the output to `.exe`; it is available only for new archives, not for updates or split volumes.
+- 7z SFX uses 7-Zip's GUI module, `7z.sfx`, taken from the same official 26.03 installers as the bundled 7-Zip and pinned in `7z-checksums.json` and `7z-provenance.json`. The webview never names a module: 7-Zip resolves a relative `-sfx` module against its working directory first, so the backend accepts only a bare `-sfx` and substitutes the absolute path of the bundled module after checking its SHA-256.
+- FreeAce SFX uses a new FreeAce extractor stub (`src-tauri/sfx/freeace-sfx.c`, built by `prepare:freeace`) with the whole archive appended. When run, it offers a folder named after the `.exe`, asks before replacing existing files, and extracts on all cores; `-y` and `-o<folder>` support scripted use. Gleipnir now finds an archive appended to an executable by its self-checksummed header, with no format change. Creation writes a plain archive beside the target, then joins stub and archive into a temporary file and renames it into place, so a failed or cancelled run leaves no partial `.exe`.
+- Added **Extract in place (consume archive)** for FreeAce archives. HatchZip core gained a FreeAce format: members are units starting at their first segment, deduplicated members share their original's unit, and the index is checked so no truncation can cut data another unit still needs. Gleipnir decodes each member to stdout from a saved copy of the index (`x -O -I`), and a file is published only after its segment checksums and SHA-256 verify. A fresh run first requires a clean integrity scrub, because recovery records are reclaimed with the segments they protect.
+- FreeAce extraction now decodes segments on all cores instead of one, about 6x faster on a 300 MB `-9` archive. Gleipnir now caps decode threads to fit installed RAM, as it already did for compression; without the cap, all cores at `-9` needed about 13 GB.
+- Releases built by the Windows CI workflow now include signed updater artifacts and `latest-windows-x86_64.json` / `latest-windows-aarch64.json` when the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets are set. The manifests are checked with the existing updater-manifest validator before upload.
+
+#### Fixed
+
+- **Open folder** after a Basic extraction did nothing for FreeAce archives and in-place extractions, because their destinations were never registered as openable. Basic mode now also shows an error toast when a folder cannot be opened, instead of failing silently.
+- In-app update checks failed with "Could not fetch a valid release JSON from the remote" because the CI-published releases carried no updater manifests. The endpoint configuration was already correct.
+- **Browse archive** in Basic mode could not scroll and clipped long listings.
+- Selecting individual files to extract from a FreeAce archive in the browse view was rejected by the backend.
+- Basic's **Encrypt file names** option did not hide for formats without header encryption.
+
+#### Not implemented and current limits
+
+- Self-extracting archives are Windows-only. The FreeAce stub is a console window rather than a graphical dialog. FreeAce cannot itself browse or extract an SFX `.exe`; run it instead.
+- Gleipnir opens files with narrow (ANSI) paths on Windows, so FreeAce archives, including SFX stubs, in folders whose names use characters outside the system code page cannot be opened. This predates this release.
+- FreeAce in-place extraction does not support SFX `.exe` files or archives whose header does not record the index position, and a partly consumed FreeAce archive cannot be restored, only resumed. It decodes at the same speed as ordinary FreeAce extraction.
+- The in-app updater keeps failing until the signing secrets are added and a release is published by the updated workflow.
+
+#### Validation and remaining verification
+
+- On Windows: 350 backend unit tests, 10 sidecar roundtrips (including a 7z SFX built with a decoy module in the working directory), 1 FreeAce SFX roundtrip, 1 updater-signature example test, and 17 HatchZip core tests passed. New FreeAce in-place tests cover shared and empty members, subprocess crashes after output and journal commits resuming byte for byte, a corrupt index refused untouched, and a member failing verification consuming nothing and publishing no bad data.
+- A 303 MB, 237-member `-9` FreeAce archive was extracted in place in 407 s; every member matched Gleipnir's SHA-256 manifest and the source was fully consumed.
+- TypeScript checks, ESLint, comment lint, Prettier, Clippy with warnings denied, and rustfmt passed. Six frontend tests and seven script tests fail identically on the 0.6.3 tree and are unrelated to this release.
+- Not yet verified in the running app: the SFX toggles, the Basic browse scrolling fix, and FreeAce in-place extraction through the review dialog.
+
 ## Changes in `v0.6.3:`
 
 ### 2026-10-24 (10/24/26): In-place extraction, 0.6.3

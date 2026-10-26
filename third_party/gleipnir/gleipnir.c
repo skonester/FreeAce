@@ -2140,6 +2140,8 @@ static double probe_entropy(const uint8_t *d, size_t n) {
 #ifdef _WIN32
   #include <windows.h>
   #include <psapi.h>
+  #include <io.h>      /* _setmode for -O */
+  #include <fcntl.h>
   typedef HANDLE thr_t;
 #else
   #include <pthread.h>
@@ -3319,6 +3321,11 @@ static int parse_header(const uint8_t *h, Head *o) {
 /* ================================================================ compress */
 static int SEGMAX = SEG_MAX_DEF;
 static int VERBOSE = 1;
+/* -I and -O exist for in-place extraction (FreeAce/HatchZip): read the index
+ * from a saved copy because the archive is being truncated from the end, and
+ * stream one member to stdout so the caller writes it durably itself. */
+static const char *INDEX_FROM = NULL;
+static int TO_STDOUT = 0;
 #define PROGRESS_MIN (32u << 20)   /* below this a run is short enough to wait out */
 
 static uint64_t fsize64(FILE *f) {
@@ -3696,8 +3703,53 @@ typedef struct {
     FILE    *f;
     Head     h;
     Index    x;
-    uint64_t fsz;
+    uint64_t fsz;     /* archive bytes, from base to end of file */
+    uint64_t base;    /* where the archive starts: 0, or after an SFX stub */
 } Archive;
+
+/* Every offset the container stores is relative to its own header, so an
+ * archive appended to an executable reads exactly as a bare one once every
+ * seek goes through here. */
+static int arc_seek(Archive *a, uint64_t off) {
+    return F_SEEK(a->f, (long long)(a->base + off), SEEK_SET);
+}
+
+/* Magic, version and the header's own checksum, without parse_header's
+ * diagnostics: the SFX scan probes many false candidates, including the
+ * stub's own copy of the magic constant. */
+static int header_plausible(const uint8_t *h) {
+    uint32_t magic; memcpy(&magic, h + 0, 4);
+    uint16_t ver;   memcpy(&ver, h + 4, 2);
+    uint64_t want;  memcpy(&want, h + 40, 8);
+    return magic == GEN_MAGIC && ver == GEN_VERSION && xxh64(h, 40, 0) == want;
+}
+
+/* An SFX is a stub executable with a whole archive appended, trailer last.
+ * The trailer gives the index's absolute position; the one header whose
+ * checksum holds and whose stored index offset lands exactly there is the
+ * archive's start.  No format change, and a false match would need a valid
+ * header checksum at a self-consistent offset. */
+#define SFX_SCAN_MAX (64ull << 20)
+static int find_sfx_base(FILE *f, uint64_t ixoff_abs, uint64_t *base) {
+    uint64_t limit = ixoff_abs < SFX_SCAN_MAX ? ixoff_abs : SFX_SCAN_MAX;
+    enum { CHUNK = 1 << 16 };
+    uint8_t *buf = malloc(CHUNK + HDR_BYTES);
+    if (!buf) return -1;
+    int rc = -1;
+    for (uint64_t at = 0; at < limit && rc != 0; at += CHUNK) {
+        if (F_SEEK(f, (long long)at, SEEK_SET) != 0) break;
+        size_t got = fread(buf, 1, CHUNK + HDR_BYTES, f);
+        for (size_t i = 0; i + HDR_BYTES <= got && at + i < limit; i++) {
+            if (buf[i] != 'G' || !header_plausible(buf + i)) continue;
+            uint64_t idxoff; memcpy(&idxoff, buf + i + 24, 8);
+            if (idxoff && at + i + idxoff == ixoff_abs) {
+                *base = at + i; rc = 0; break;
+            }
+        }
+    }
+    free(buf);
+    return rc;
+}
 
 static int arc_open(const char *path, Archive *a) {
     memset(a, 0, sizeof *a);
@@ -3710,7 +3762,6 @@ static int arc_open(const char *path, Archive *a) {
     }
     uint8_t hb[HDR_BYTES];
     if (fread(hb, 1, HDR_BYTES, a->f) != HDR_BYTES) return -1;
-    if (parse_header(hb, &a->h) != 0) return -1;
 
     /* The trailer is the authority on where the index is; the header's copy is
      * a cross-check.  That ordering is deliberate -- the trailer is written
@@ -3718,27 +3769,77 @@ static int arc_open(const char *path, Archive *a) {
      * that gets rewritten, so it is the likelier of the two to be torn by a
      * crash mid-write. */
     uint8_t trl[TRL_BYTES];
-    if (F_SEEK(a->f, (long long)(a->fsz - TRL_BYTES), SEEK_SET) != 0) return -1;
-    if (fread(trl, 1, TRL_BYTES, a->f) != TRL_BYTES) return -1;
+    /* -I: in-place extraction truncates the archive from the end, index
+     * first, so the trailer and index come from the copy saved beforehand.
+     * The segments still present are read from the archive as usual. */
+    FILE *ixf = NULL;
+    uint64_t ixfsz = 0;
+    if (INDEX_FROM) {
+        ixf = fopen(INDEX_FROM, "rb");
+        if (!ixf) {
+            fprintf(stderr, "gleipnir: %s: %s\n", INDEX_FROM, strerror(errno));
+            return -1;
+        }
+        ixfsz = fsize64(ixf);
+        if (ixfsz < TRL_BYTES ||
+            F_SEEK(ixf, (long long)(ixfsz - TRL_BYTES), SEEK_SET) != 0 ||
+            fread(trl, 1, TRL_BYTES, ixf) != TRL_BYTES) {
+            fprintf(stderr, "gleipnir: %s: saved index is unreadable\n", INDEX_FROM);
+            fclose(ixf); return -1;
+        }
+    } else {
+        if (F_SEEK(a->f, (long long)(a->fsz - TRL_BYTES), SEEK_SET) != 0) return -1;
+        if (fread(trl, 1, TRL_BYTES, a->f) != TRL_BYTES) return -1;
+    }
     uint32_t tmagic; memcpy(&tmagic, trl + 16, 4);
     uint64_t ixh, ixn;
     memcpy(&ixh, trl + 0, 8);
     memcpy(&ixn, trl + 8, 8);
-    if (tmagic != GEN_MAGIC || ixn > INDEX_MAX ||
-        ixn > a->fsz - HDR_BYTES - TRL_BYTES) {
-        fprintf(stderr, "gleipnir: %s: archive index is unreadable "
-                        "(truncated or corrupt)\n", path);
-        return -1;
+
+    /* No header at offset 0 but a valid trailer: look for an archive appended
+     * to an SFX stub.  A bare archive with a damaged header finds nothing and
+     * still gets parse_header's diagnosis below. */
+    if (!ixf && !header_plausible(hb) && tmagic == GEN_MAGIC &&
+        ixn <= a->fsz - HDR_BYTES - TRL_BYTES &&
+        find_sfx_base(a->f, a->fsz - TRL_BYTES - ixn, &a->base) == 0) {
+        a->fsz -= a->base;
+        if (arc_seek(a, 0) != 0 || fread(hb, 1, HDR_BYTES, a->f) != HDR_BYTES)
+            return -1;
     }
-    uint64_t ixoff = a->fsz - TRL_BYTES - ixn;
-    if (a->h.idxoff && a->h.idxoff != ixoff)
-        fprintf(stderr, "gleipnir: warning: header and trailer disagree on index "
-                        "position; trusting the trailer\n");
+    if (parse_header(hb, &a->h) != 0) { if (ixf) fclose(ixf); return -1; }
+    uint64_t ixoff;
+    if (ixf) {
+        /* With the original index gone from the archive, the header's copy of
+         * its offset is the only record of where it stood, so it must be set
+         * and the saved file must be exactly index plus trailer. */
+        if (tmagic != GEN_MAGIC || ixn > INDEX_MAX || ixn != ixfsz - TRL_BYTES ||
+            a->h.idxoff < HDR_BYTES) {
+            fprintf(stderr, "gleipnir: %s: saved index does not match %s\n",
+                    INDEX_FROM, path);
+            fclose(ixf); return -1;
+        }
+        ixoff = a->h.idxoff;
+        a->fsz = ixoff + ixn + TRL_BYTES;
+    } else {
+        if (tmagic != GEN_MAGIC || ixn > INDEX_MAX ||
+            ixn > a->fsz - HDR_BYTES - TRL_BYTES) {
+            fprintf(stderr, "gleipnir: %s: archive index is unreadable "
+                            "(truncated or corrupt)\n", path);
+            return -1;
+        }
+        ixoff = a->fsz - TRL_BYTES - ixn;
+        if (a->h.idxoff && a->h.idxoff != ixoff)
+            fprintf(stderr, "gleipnir: warning: header and trailer disagree on index "
+                            "position; trusting the trailer\n");
+    }
 
     uint8_t *ib = malloc((size_t)ixn + 1);
-    if (!ib) { fprintf(stderr, "gleipnir: out of memory\n"); return -1; }
-    if (F_SEEK(a->f, (long long)ixoff, SEEK_SET) != 0 ||
-        fread(ib, 1, (size_t)ixn, a->f) != ixn) { free(ib); return -1; }
+    if (!ib) { fprintf(stderr, "gleipnir: out of memory\n"); if (ixf) fclose(ixf); return -1; }
+    int ixread = ixf
+        ? F_SEEK(ixf, 0, SEEK_SET) == 0 && fread(ib, 1, (size_t)ixn, ixf) == ixn
+        : arc_seek(a, ixoff) == 0 && fread(ib, 1, (size_t)ixn, a->f) == ixn;
+    if (ixf) fclose(ixf);
+    if (!ixread) { free(ib); return -1; }
     if (xxh64(ib, (size_t)ixn, 0) != ixh) {
         fprintf(stderr, "gleipnir: %s: archive index is corrupt\n", path);
         free(ib); return -1;
@@ -3837,7 +3938,7 @@ static uint8_t *seg_recover(Archive *a, uint64_t si) {
     uint8_t *acc = calloc((size_t)P->len + 1, 1);
     uint8_t *tmp = malloc((size_t)P->len + 1);
     if (!acc || !tmp) { free(acc); free(tmp); return NULL; }
-    if (F_SEEK(a->f, (long long)P->off, SEEK_SET) != 0 ||
+    if (arc_seek(a, P->off) != 0 ||
         fread(acc, 1, (size_t)P->len, a->f) != P->len) {
         free(acc); free(tmp); return NULL;
     }
@@ -3845,7 +3946,7 @@ static uint8_t *seg_recover(Archive *a, uint64_t si) {
         if (k == si) continue;
         Seg *s = &a->x.s[k];
         if (s->clen > P->len) { free(acc); free(tmp); return NULL; }
-        if (F_SEEK(a->f, (long long)s->off, SEEK_SET) != 0 ||
+        if (arc_seek(a, s->off) != 0 ||
             fread(tmp, 1, (size_t)s->clen, a->f) != s->clen) {
             free(acc); free(tmp); return NULL;
         }
@@ -3924,6 +4025,20 @@ static int run_members(Archive *a, const char *destdir, int test_only,
     for (uint64_t i = 0; i < a->x.nm; i++) grand += a->x.m[i].size;
 
     int nthr = NTHREAD > 1 ? NTHREAD : 1;
+    /* The read side holds a full private model per worker exactly as the
+     * write side does, so it needs the same clamp: -t0 on a -9 archive would
+     * otherwise ask for over a gigabyte per core with nothing stopping it.
+     * Sized for the raster geometry, the larger of the two models a segment
+     * can carry; run_jobs sets the real geometry per batch below. */
+    if (nthr > 1) {
+        uint64_t segmax = 0;
+        for (uint64_t i = 0; i < a->x.ns; i++)
+            if (a->x.s[i].rawlen > segmax) segmax = a->x.s[i].rawlen;
+        DET_STRIDE = 1;
+        set_level(a->h.lvl);
+        nthr = threads_for(segmax);
+        DET_STRIDE = 0;
+    }
     SegR *sr = calloc((size_t)nthr, sizeof(SegR));
     Job  *jb = calloc((size_t)nthr, sizeof(Job));
     Job  *rj = calloc((size_t)nthr, sizeof(Job));
@@ -3949,7 +4064,12 @@ static int run_members(Archive *a, const char *destdir, int test_only,
         FILE *fo = NULL;
         char path[NAME_MAX_B];
         path[0] = 0;
-        if (!test_only) {
+        if (!test_only && TO_STDOUT) {
+            /* -O: the caller writes the file.  It must treat the data as
+             * unverified until the exit status confirms the SHA-256 below. */
+            fo = stdout;
+            snprintf(path, sizeof path, "(stdout)");
+        } else if (!test_only) {
             /* Member names run to 65535 bytes and this buffer is 4096, so
              * truncation is reachable from any archive.  A truncated path is a
              * different path: two members collapse onto one, and the name
@@ -4016,7 +4136,7 @@ static int run_members(Archive *a, const char *destdir, int test_only,
                 if (!sr[nb].out || !sr[nb].cb) {
                     fprintf(stderr, "gleipnir: out of memory\n"); exit(1);
                 }
-                if (F_SEEK(a->f, (long long)s->off, SEEK_SET) != 0 ||
+                if (arc_seek(a, s->off) != 0 ||
                     fread(sr[nb].cb, 1, (size_t)s->clen, a->f) != s->clen) {
                     sr[nb].ok = -1;
                 } else {
@@ -4100,7 +4220,9 @@ static int run_members(Archive *a, const char *destdir, int test_only,
             fprintf(stderr, "gleipnir: %s: SHA-256 mismatch\n", m->name);
             member_ok = 0; rc = 2;
         }
-        if (fo) {
+        if (fo == stdout) {
+            if (fflush(stdout) != 0) { member_ok = 0; rc = 1; }
+        } else if (fo) {
             fclose(fo);
             if (member_ok) { set_perms(path, m->mode); set_mtime(path, m->mtime); }
         }
@@ -4154,7 +4276,7 @@ static uint8_t *blob_read(Archive *a, uint64_t si, int *state) {
     uint8_t *b = calloc((size_t)s->clen + 1, 1);
     if (!b) { fprintf(stderr, "gleipnir: out of memory\n"); exit(1); }
     int good = 0;
-    if (F_SEEK(a->f, (long long)s->off, SEEK_SET) == 0 &&
+    if (arc_seek(a, s->off) == 0 &&
         fread(b, 1, (size_t)s->clen, a->f) == s->clen)
         good = xxh64(b, (size_t)s->clen, 0) == s->chash;
     if (good) { *state = 0; return b; }
@@ -4404,6 +4526,10 @@ static void usage(void) {
       "            the stored name and the bare filename, so -x \"*.log\" works\n"
       "            whatever directory the file is in\n"
       "  -q        quiet\n"
+      "  -I FILE   with x, read the index from FILE (index + trailer saved\n"
+      "            before in-place extraction truncated the archive)\n"
+      "  -O        with x, write the one named member to stdout; trust it\n"
+      "            only once the exit status confirms its SHA-256\n"
       "  --version, --help\n"
       "\n"
       "cold storage:  gleipnir c -5 -t0 -p32 archive.gl /data   then verify with\n"
@@ -4470,6 +4596,12 @@ int main(int argc, char **argv) {
             }
         }
         else if (c == 'q') VERBOSE = 0;
+        else if (c == 'I') {
+            if (argv[a][2]) INDEX_FROM = argv[a] + 2;
+            else if (a + 1 < argc) INDEX_FROM = argv[++a];
+            else { usage(); return 1; }
+        }
+        else if (c == 'O' && !argv[a][2]) TO_STDOUT = 1;
         else if (c == 'L') longform = 1;
         else if (c == 'D') deep = 1;
         else if (c == 'M') manifest = 1;
@@ -4510,6 +4642,18 @@ int main(int argc, char **argv) {
     }
     if (a >= argc) { usage(); return 1; }
     const char *arc = argv[a++];
+    /* -O: `x -O archive member`, exactly one member and no destination. */
+    if ((INDEX_FROM || TO_STDOUT) && mode != 'd') {
+        fprintf(stderr, "gleipnir: -I and -O apply to extraction only\n");
+        return 1;
+    }
+    if (TO_STDOUT && argc - a != 1) {
+        fprintf(stderr, "gleipnir: -O extracts exactly one named member\n");
+        return 1;
+    }
+#ifdef _WIN32
+    if (TO_STDOUT) _setmode(_fileno(stdout), _O_BINARY);
+#endif
 
     build_tables(); build_states(); build_dt(); build_ccls();
 
@@ -4535,6 +4679,19 @@ int main(int argc, char **argv) {
     }
     else if (mode == 't') rc = deep ? run_members(&ar, NULL, 1, NULL, 0)
                                     : do_scrub(&ar, arc);
+    else if (TO_STDOUT) {
+        /* run_members writes nothing for an unknown name and concatenates
+         * duplicates, either of which would look like a successful file. */
+        uint64_t hits = 0;
+        for (uint64_t i = 0; i < ar.x.nm; i++) hits += !strcmp(ar.x.m[i].name, argv[a]);
+        if (hits != 1) {
+            fprintf(stderr, "gleipnir: -O: %s names %llu members, not one\n",
+                    argv[a], (unsigned long long)hits);
+            rc = 2;
+        } else {
+            rc = run_members(&ar, NULL, 0, argv + a, 1);
+        }
+    }
     else                  rc = run_members(&ar, a < argc ? argv[a] : ".", 0,
                                            a + 1 < argc ? argv + a + 1 : NULL,
                                            a + 1 < argc ? argc - a - 1 : 0);

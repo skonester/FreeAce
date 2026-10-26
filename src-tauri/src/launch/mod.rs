@@ -115,6 +115,8 @@ pub use extract_window::{
     leave_extract_warm, mark_main_window_ready, restore_foreground_activation,
     should_keep_extract_warm, show_main_window, spawn_extract_window,
 };
+#[cfg(windows)]
+pub(crate) use open_path::normalize_shell_open_path;
 #[allow(unused_imports)]
 pub use open_path::{
     assert_extract_bound_archive, assert_extract_bound_destination,

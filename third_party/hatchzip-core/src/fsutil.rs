@@ -46,7 +46,8 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut tmp = tempfile::NamedTempFile::new_in(path.parent().unwrap_or(Path::new(".")))?;
     tmp.write_all(bytes)?;
     tmp.as_file().sync_all()?;
-    tmp.persist(path).with_context(|| format!("replacing {}", path.display()))?;
+    tmp.persist(path)
+        .with_context(|| format!("replacing {}", path.display()))?;
     sync_dir(path.parent().unwrap_or(Path::new(".")))
 }
 
@@ -66,7 +67,10 @@ pub fn sync_dir(dir: &Path) -> Result<()> {
 /// builds: turning in-place freeing off silently was exactly what made the
 /// macOS punch flake in the TODO undiagnosable.
 pub fn can_punch(dir: &Path) -> bool {
-    let Ok(scratch) = tempfile::Builder::new().prefix(".freeace-probe-").tempdir_in(dir) else {
+    let Ok(scratch) = tempfile::Builder::new()
+        .prefix(".freeace-probe-")
+        .tempdir_in(dir)
+    else {
         return false;
     };
     let probe = scratch.path().join("probe");

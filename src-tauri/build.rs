@@ -10,11 +10,21 @@ const BINARIES: &[(&str, &str)] = &[
     ("linux/arm64/7zzs", "7z-aarch64-unknown-linux-gnu"),
 ];
 
-fn windows_dll_for_target(target_triple: &str) -> Option<&'static str> {
+/// Full-runtime DLL plus the GUI SFX module, copied beside the Windows sidecar
+/// as bundle resources (see tauri.windows.conf.json).
+fn windows_runtime_files_for_target(
+    target_triple: &str,
+) -> &'static [(&'static str, &'static str)] {
     match target_triple {
-        "x86_64-pc-windows-msvc" => Some("win/x64/7z.dll"),
-        "aarch64-pc-windows-msvc" => Some("win/arm64/7z.dll"),
-        _ => None,
+        // gnu is a local-development host; releases build msvc.
+        "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu" => {
+            &[("win/x64/7z.dll", "7z.dll"), ("win/x64/7z.sfx", "7z.sfx")]
+        }
+        "aarch64-pc-windows-msvc" => &[
+            ("win/arm64/7z.dll", "7z.dll"),
+            ("win/arm64/7z.sfx", "7z.sfx"),
+        ],
+        _ => &[],
     }
 }
 
@@ -330,31 +340,50 @@ fn prepare_7z_binaries() {
         }
     }
 
-    if let Some(source) = windows_dll_for_target(&target_triple) {
+    for (source, file_name) in windows_runtime_files_for_target(&target_triple) {
         let source_path = assets_dir.join(source);
-        let target_path = out_dir.join("7z.dll");
+        let target_path = out_dir.join(file_name);
         println!("cargo:rerun-if-changed={}", source_path.display());
         if !source_path.exists() {
             panic!(
-                "Missing required full 7-Zip DLL for target {target_triple}: {}",
+                "Missing required Windows 7-Zip runtime file for target {target_triple}: {}",
                 source_path.display()
             );
         }
         let actual_hash = sha256_file(&source_path);
         let expected = checksums
-            .get(source)
+            .get(*source)
             .unwrap_or_else(|| panic!("No checksum entry for {source} in 7z-checksums.json."));
         assert_eq!(
             &actual_hash, expected,
-            "Checksum mismatch for required full 7-Zip DLL {source}"
+            "Checksum mismatch for required Windows 7-Zip runtime file {source}"
         );
         std::fs::copy(&source_path, &target_path).unwrap_or_else(|error| {
             panic!(
-                "failed to prepare bundled 7z DLL {} from {}: {error}",
+                "failed to prepare bundled 7z runtime file {} from {}: {error}",
                 target_path.display(),
                 source_path.display()
             )
         });
+        // run_7z re-hashes the module before handing its path to 7-Zip, so a
+        // swapped file beside the installed app cannot be embedded in output.
+        if *file_name == "7z.sfx" {
+            println!("cargo:rustc-env=FREEACE_7Z_SFX_SHA256={expected}");
+        }
+    }
+
+    // FreeAce's own SFX stub is compiled from source by prepare-freeace.js, so
+    // there is no committed checksum; pin what this build bundles so run_freeace
+    // can detect a stub swapped after install.
+    if !windows_runtime_files_for_target(&target_triple).is_empty() {
+        let stub = out_dir.join("freeace.sfx");
+        println!("cargo:rerun-if-changed={}", stub.display());
+        if stub.is_file() {
+            println!(
+                "cargo:rustc-env=FREEACE_SFX_STUB_SHA256={}",
+                sha256_file(&stub)
+            );
+        }
     }
 
     if let Some(sidecar) = required_sidecar {

@@ -72,6 +72,119 @@ fn parse_run_freeace_request(request_json: &str) -> Result<Vec<String>, String> 
     Ok(request.args)
 }
 
+/// The folder a successful run leaves output in: the extract destination
+/// (Gleipnir defaults to `.`, which the app never relies on), or the folder
+/// holding a newly compressed archive. `args` are already validated.
+fn freeace_openable_directory(args: &[String]) -> Option<std::path::PathBuf> {
+    let mut positionals = args
+        .iter()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .map(std::path::Path::new);
+    match args.first()?.as_str() {
+        "x" => {
+            positionals.next()?;
+            positionals.next().map(std::path::Path::to_path_buf)
+        }
+        "c" => positionals
+            .next()?
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map(std::path::Path::to_path_buf),
+        _ => None,
+    }
+}
+
+/// A FreeAce SFX is the bundled stub with a whole archive appended (Gleipnir
+/// locates it; see `find_sfx_base` in gleipnir.c). Gleipnir writes the plain
+/// archive to `staged` beside the requested `.exe`; only a clean run is
+/// joined with the stub and renamed over `output`.
+struct SfxPlan {
+    stub: Vec<u8>,
+    staged: std::path::PathBuf,
+    output: std::path::PathBuf,
+}
+
+fn sibling_temp_path(target: &std::path::Path, suffix: &str) -> Result<std::path::PathBuf, String> {
+    let name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Output has an invalid file name.".to_string())?;
+    let mut random = [0u8; 8];
+    getrandom::fill(&mut random).map_err(|error| error.to_string())?;
+    let tag: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(target.with_file_name(format!(".{name}.{tag}.{suffix}")))
+}
+
+/// Strip the validated `-sfx` marker and point Gleipnir at a staged archive.
+/// The stub is verified first so a broken install fails before a long run.
+fn prepare_sfx_compress(
+    app: &tauri::AppHandle,
+    args: &mut Vec<String>,
+) -> Result<Option<SfxPlan>, String> {
+    let Some(marker) = args
+        .iter()
+        .position(|arg| arg == crate::validation::SFX_MARKER)
+    else {
+        return Ok(None);
+    };
+    let stub = bundled_freeace_sfx_stub(app)?;
+    args.remove(marker);
+    let output_index = args
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, arg)| !arg.starts_with('-'))
+        .map(|(index, _)| index)
+        .ok_or_else(|| "Self-extracting archive output is missing.".to_string())?;
+    let output = std::path::PathBuf::from(&args[output_index]);
+    let staged = sibling_temp_path(&output, "freeace-part")?;
+    args[output_index] = staged.to_string_lossy().into_owned();
+    Ok(Some(SfxPlan {
+        stub,
+        staged,
+        output,
+    }))
+}
+
+#[cfg(windows)]
+fn bundled_freeace_sfx_stub(app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
+    super::commands::verified_bundled_sfx_resource(
+        app,
+        "freeace.sfx",
+        option_env!("FREEACE_SFX_STUB_SHA256"),
+    )
+    .map(|(_, bytes)| bytes)
+}
+
+#[cfg(not(windows))]
+fn bundled_freeace_sfx_stub(_app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
+    Err("Self-extracting archives are only available on Windows.".to_string())
+}
+
+/// Join stub and archive into a sibling temp file, flush it, then rename it
+/// over the output, so a failure never leaves a half-written `.exe` behind.
+fn publish_sfx(plan: &SfxPlan) -> Result<(), String> {
+    use std::io::Write as _;
+    let partial = sibling_temp_path(&plan.output, "exe-part")?;
+    let result = (|| -> std::io::Result<()> {
+        let mut out = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)?;
+        out.write_all(&plan.stub)?;
+        std::io::copy(&mut std::fs::File::open(&plan.staged)?, &mut out)?;
+        out.sync_all()?;
+        drop(out);
+        std::fs::rename(&partial, &plan.output)
+    })();
+    let _ = std::fs::remove_file(&plan.staged);
+    if result.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
+    result.map_err(|error| format!("Could not write the self-extracting archive: {error}"))
+}
+
 struct CollectedFreeaceOutput {
     stdout: String,
     stderr: String,
@@ -185,7 +298,9 @@ pub async fn run_freeace(
     state: tauri::State<'_, RunningFreeace>,
     request_json: String,
 ) -> Result<RunResult, String> {
-    let args = parse_run_freeace_request(&request_json)?;
+    let original_args = parse_run_freeace_request(&request_json)?;
+    let mut args = original_args.clone();
+    let sfx = prepare_sfx_compress(&app, &mut args)?;
 
     {
         let mut slot = lock_freeace(&state)?;
@@ -201,7 +316,7 @@ pub async fn run_freeace(
         .shell()
         .sidecar("gleipnir")
         .map_err(|error| error.to_string())?
-        .args(args);
+        .args(&args);
     let mut command: std::process::Command = plugin_command.into();
     command
         .stdin(Stdio::null())
@@ -233,6 +348,9 @@ pub async fn run_freeace(
             let _ = terminate_child(&child);
             if let Ok(mut slot) = lock_freeace(&state) {
                 slot.take();
+            }
+            if let Some(plan) = &sfx {
+                let _ = std::fs::remove_file(&plan.staged);
             }
             return Err(error);
         }
@@ -283,7 +401,7 @@ pub async fn run_freeace(
         let _ = block_on(async move { tx.send(event).await });
     });
 
-    let collected = collect_freeace_output(&mut rx, MAX_OUTPUT_BYTES, &window).await;
+    let mut collected = collect_freeace_output(&mut rx, MAX_OUTPUT_BYTES, &window).await;
 
     if collected.stream_error.is_some() || collected.exit.is_none() {
         let _ = terminate_child(&child);
@@ -291,11 +409,33 @@ pub async fn run_freeace(
     if let Ok(mut slot) = lock_freeace(&state) {
         slot.take();
     }
+    let mut code = collected.exit_code();
+    if let Some(plan) = &sfx {
+        if code == 0 {
+            if let Err(error) = publish_sfx(plan) {
+                code = 1;
+                collected.stderr.push_str(&format!(
+                    "
+{error}"
+                ));
+            }
+        } else {
+            let _ = std::fs::remove_file(&plan.staged);
+        }
+    }
+    // 7z registers its destination when staging commits; Gleipnir writes in
+    // place, so a clean exit is the equivalent point. Without this the main
+    // window's "Open folder" is refused after every .freeace operation.
+    if code == 0 {
+        if let Some(dir) = freeace_openable_directory(&original_args) {
+            crate::launch::remember_openable_directory(&app, &dir);
+        }
+    }
 
     Ok(RunResult {
         stdout: sanitize_output(&collected.stdout),
         stderr: sanitize_output(&collected.stderr),
-        code: collected.exit_code(),
+        code,
         warning_code: None,
         stdout_truncated: collected.stdout_truncated,
         stderr_truncated: collected.stderr_truncated,
@@ -323,4 +463,103 @@ pub fn cancel_freeace(state: tauri::State<'_, RunningFreeace>) -> Result<bool, S
 #[tauri::command]
 pub fn is_freeace_running(state: tauri::State<'_, RunningFreeace>) -> Result<bool, String> {
     Ok(lock_freeace(&state)?.is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{freeace_openable_directory, publish_sfx, SfxPlan};
+    use std::path::PathBuf;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "freeace-sfx-{tag}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn leftovers(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with('.'))
+            .collect()
+    }
+
+    #[test]
+    fn publish_sfx_joins_stub_and_archive_and_replaces_output() {
+        let dir = temp_dir("publish");
+        let output = dir.join("setup.exe");
+        std::fs::write(&output, b"old").unwrap();
+        let staged = dir.join(".setup.exe.1.freeace-part");
+        std::fs::write(&staged, b"GENA-archive").unwrap();
+        let plan = SfxPlan {
+            stub: b"MZ-stub".to_vec(),
+            staged: staged.clone(),
+            output: output.clone(),
+        };
+        publish_sfx(&plan).expect("publish");
+        assert_eq!(std::fs::read(&output).unwrap(), b"MZ-stubGENA-archive");
+        assert!(leftovers(&dir).is_empty(), "{:?}", leftovers(&dir));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn publish_sfx_failure_leaves_no_partial_output() {
+        let dir = temp_dir("missing");
+        let output = dir.join("setup.exe");
+        let plan = SfxPlan {
+            stub: b"MZ".to_vec(),
+            staged: dir.join(".setup.exe.1.freeace-part"),
+            output: output.clone(),
+        };
+        publish_sfx(&plan).expect_err("staged archive is missing");
+        assert!(!output.exists());
+        assert!(leftovers(&dir).is_empty(), "{:?}", leftovers(&dir));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn openable_directory_is_extract_destination_after_flags() {
+        assert_eq!(
+            freeace_openable_directory(&args(&["x", "-t0", "/a/DLC.freeace", "/out/DLC"])),
+            Some(PathBuf::from("/out/DLC"))
+        );
+        assert_eq!(
+            freeace_openable_directory(&args(&["x", "/a/DLC.freeace"])),
+            None
+        );
+    }
+
+    #[test]
+    fn openable_directory_is_compress_output_parent() {
+        assert_eq!(
+            freeace_openable_directory(&args(&["c", "-9", "-t4", "/out/a.freeace", "/in"])),
+            Some(PathBuf::from("/out"))
+        );
+        assert_eq!(
+            freeace_openable_directory(&args(&["c", "a.freeace", "in"])),
+            None
+        );
+    }
+
+    #[test]
+    fn openable_directory_ignores_list_and_test() {
+        assert_eq!(
+            freeace_openable_directory(&args(&["l", "/a/b.freeace"])),
+            None
+        );
+        assert_eq!(
+            freeace_openable_directory(&args(&["t", "/a/b.freeace"])),
+            None
+        );
+    }
 }

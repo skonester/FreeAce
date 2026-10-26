@@ -210,6 +210,9 @@ const encryptHeaders = addEl("input", "encrypt-headers") as HTMLInputElement;
 encryptHeaders.type = "checkbox";
 const sfxInput = addEl("input", "sfx") as HTMLInputElement;
 sfxInput.type = "checkbox";
+const basicSfxInput = addEl("input", "basic-sfx") as HTMLInputElement;
+basicSfxInput.type = "checkbox";
+addEl("label", "basic-sfx-row");
 const updateModeInput = addEl("input", "update-mode") as HTMLInputElement;
 updateModeInput.type = "checkbox";
 const storeTimestampsInput = addEl(

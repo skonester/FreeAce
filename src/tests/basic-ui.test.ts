@@ -171,6 +171,7 @@ import {
   handleBasicDragDrop,
   handleBasicDrop,
   initBasicWorkspace,
+  openPathWithFeedback,
   renderBasicInputs,
   setBasicBrowsePasswordVisible,
   setBasicView,
@@ -1875,6 +1876,21 @@ describe("basic-ui drag and init wiring", () => {
     const extensions = options?.filters?.[0]?.extensions ?? [];
     expect(extensions).toContain("rar");
     expect(extensions).toContain("zip");
+  });
+
+  it("shows a toast when the backend refuses to open a folder", async () => {
+    invokeMock.mockImplementationOnce(async () => {
+      throw new Error("Only folders from a recent successful FreeAce extract");
+    });
+
+    await openPathWithFeedback("/tmp/destination");
+
+    const toasts = Array.from(document.querySelectorAll(".toast"), (toast) =>
+      toast.textContent?.trim(),
+    );
+    expect(toasts).toContain(
+      "Could not open folder: Only folders from a recent successful FreeAce extract",
+    );
   });
 
   it("caps Basic archive-picker selections before batch extraction", async () => {

@@ -2,6 +2,7 @@
 //! units, byte ranges that can be truncated away once every file in them is
 //! safely on disk, and a way to decode one unit.
 
+pub mod freeace;
 #[cfg(feature = "rar")]
 mod rar;
 pub mod resumable;
@@ -231,6 +232,7 @@ pub fn open(
         #[cfg(not(feature = "rar"))]
         RAR => Err(no_rar()),
         targz::NAME => targz::open(storage, point),
+        freeace::NAME => freeace::open(storage, tail),
         other => bail!("unknown archive format '{other}' in the journal"),
     }
 }
@@ -267,6 +269,10 @@ pub fn rebuild_index(
         RAR => (rar::closing(storage, keep)?, Vec::new()),
         #[cfg(not(feature = "rar"))]
         RAR => return Err(no_rar()),
+        freeace::NAME => bail!(
+            "a partly extracted FreeAce archive cannot be restored; resume the extraction \
+             to finish it"
+        ),
         other => bail!("unknown archive format '{other}' in the journal"),
     };
     Ok(NewIndex { append, patches })
@@ -280,6 +286,9 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
     let starts = |magic: &[u8]| head.starts_with(magic);
     if starts(b"7z\xBC\xAF\x27\x1C") {
         return Ok("7z");
+    }
+    if starts(freeace::MAGIC) {
+        return Ok(freeace::NAME);
     }
     let is_tar = |head: &[u8]| head.len() >= 263 && &head[257..262] == b"ustar";
     if is_tar(head) {

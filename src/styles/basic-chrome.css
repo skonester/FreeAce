@@ -144,6 +144,13 @@ body.platform-macos #app[data-workspace-mode="basic"] .titlebar-logo {
   min-height: 0;
 }
 
+/* The card must be allowed to shrink below its content, or it grows to fit
+   every row, the table never scrolls, and the view's overflow clips it. */
+#basic-browse > .basic-card {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 #basic-browse .basic-browse-table-wrap {
   flex: 1 1 auto;
 }
@@ -594,6 +601,11 @@ body.platform-macos #app[data-workspace-mode="basic"] .titlebar-logo {
   color: var(--text);
   cursor: pointer;
   user-select: none;
+}
+
+/* display above would otherwise override the hidden attribute. */
+.basic-toggle[hidden] {
+  display: none;
 }
 
 .basic-toggle input {

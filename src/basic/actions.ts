@@ -76,6 +76,9 @@ export async function openPathWithFeedback(path: string): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`Failed to open path: ${msg}`, "error");
+    // Basic has no visible log, so a refusal would otherwise look like a
+    // dead button.
+    showToast(`Could not open folder: ${msg}`, "error");
   }
 }
 

@@ -5,7 +5,7 @@ one archive (or one numbered volume) and a destination, then click Extract.
 FreeAce presents the space estimate and asks before consuming any archive data.
 The option is off by default and is not used by Explorer/Finder quick extraction.
 
-ZIP, 7z, uncompressed tar and tar.gz/tgz are supported, including numbered
+ZIP, 7z, uncompressed tar, tar.gz/tgz and FreeAce (`.freeace`) are supported, including numbered
 split sets such as `backup.7z.001` or `backup.zip.001`. Any surviving numbered
 volume can locate the first volume. Native ZIP spanning (`.z01`, `.z02`) and
 other formats use ordinary extraction. Passwords can be entered in the existing
@@ -35,22 +35,34 @@ FreeAce resumes from the durable checkpoint. The archive may no longer be valid
 as a standalone archive until extraction finishes. Do not delete the recovery
 files or move/modify the output while extraction is incomplete.
 
-## FreeAce format feasibility
+## FreeAce archives
 
-The Gleipnir v2 container behind `.freeace` is structurally suitable for future
-support: segments are independently modelled and indexed by compressed offset,
-length and checksums. The index and trailer live at the end and would need to
-be saved before reclaiming archive bytes.
+FreeAce support lives in the vendored HatchZip core as its own format
+(`third_party/hatchzip-core/src/archive/freeace.rs`); the on-disk format is
+unchanged.
 
-The current Gleipnir sidecar only offers whole-archive extraction. Integration
-needs a segment decoding interface, durable writes to the correct file offsets,
-a journal of completed segments, and a way to reopen a shortened container
-using its saved index. Deduplicated members share segments; every referenced
-output must be durable before a shared segment is reclaimed. Optional parity
-groups also reference compressed segments, so recovery must finish before
-discarding any segment it depends on. Full-file hashes must remain verifiable
-across interruption and resume.
+- **Units.** Each member is a unit starting at its first segment. A
+  deduplicated member shares an earlier member's segments, so it joins that
+  member's unit. Members with no data ride with the lowest unit, which starts
+  at offset 0 and takes the header with it. Before anything is touched, the
+  index is checked so that every unit's data lies below the next unit's
+  start. An archive that does not satisfy this is refused, never guessed at.
+- **Saved index.** The index and trailer are the saved tail. Once the archive
+  has been truncated, Gleipnir reads them from a temporary copy (`x -I`),
+  while the segments still present are read from the archive itself.
+- **Decoding and verification.** Gleipnir streams one member at a time to
+  stdout (`x -O`), using every core it can fit in memory. A member's output
+  file is published only after Gleipnir exits cleanly, which means every
+  segment checksum and the member's SHA-256 matched. A failed member stops
+  the run before its unit is committed, so the archive is not consumed past
+  that point.
+- **Recovery records.** These are interleaved with the segments, so they are
+  reclaimed along with them. A fresh run therefore runs a full checksum scrub
+  (`gleipnir t`) first and refuses a damaged archive; repair it, or extract it
+  normally. A resumed run cannot be scrubbed, but each member is still
+  verified as it is decoded.
+- **Not supported:** FreeAce self-extracting `.exe` files, and archives whose
+  header does not record the index position.
 
-This is feasible without necessarily changing the on-disk format, but it is
-not implemented in this version. `.freeace` continues to use ordinary extraction;
-in-place mode refuses it before changing the source.
+Decoding a FreeAce archive costs as much CPU as compressing it did, so
+in-place extraction runs at the same speed as ordinary FreeAce extraction.

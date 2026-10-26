@@ -330,6 +330,58 @@ fn full_windows_runtime_has_companion_dll_and_rar_handler() {
     );
 }
 
+/// Mirrors run_7z's rewrite of `-sfx` to the absolute bundled module. A decoy
+/// module in the working directory must not be used: 7-Zip resolves relative
+/// module names there first, which is why the webview never names one.
+#[cfg(windows)]
+#[test]
+fn sfx_create_uses_absolute_bundled_module_and_round_trips() {
+    let Some(bin) = binary_path() else {
+        return;
+    };
+    let module = bin.parent().expect("sidecar parent").join("7z.sfx");
+    assert!(module.is_file(), "Windows sidecar requires adjacent 7z.sfx");
+    let dir = temp_dir("sfx");
+    std::fs::write(dir.join("7z.sfx"), b"decoy").unwrap();
+    std::fs::write(dir.join("input.txt"), "hello sfx").unwrap();
+    let output = dir.join("setup.exe");
+
+    let created = Command::new(&bin)
+        .current_dir(&dir)
+        .args(["a", "-t7z", "-y"])
+        .arg(format!("-sfx{}", module.display()))
+        .arg(&output)
+        .args(["--", "input.txt"])
+        .output()
+        .expect("7z a -sfx");
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let stub = std::fs::read(&module).unwrap();
+    let archive = std::fs::read(&output).unwrap();
+    assert!(
+        archive.starts_with(&stub),
+        "SFX did not embed the bundled module"
+    );
+
+    let extracted = dir.join("out");
+    let status = Command::new(&bin)
+        .arg("x")
+        .arg(format!("-o{}", extracted.display()))
+        .args(["-aou", "--"])
+        .arg(&output)
+        .output()
+        .expect("7z x sfx");
+    assert!(status.status.success());
+    assert_eq!(
+        std::fs::read_to_string(extracted.join("input.txt")).unwrap(),
+        "hello sfx"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[cfg(unix)]
 #[test]
 fn zip_round_trips_contained_and_dangling_symlinks() {

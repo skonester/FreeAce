@@ -111,6 +111,8 @@ jobs:
       - run: node scripts/npm-audit-signatures.cjs
       - run: npm run test:cov
       - run: npm run prepare:7z
+      # Gleipnir sidecar and the Windows FreeAce SFX stub are bundle inputs.
+      - run: npm run prepare:freeace
       - run: npm run test:archives
       - name: Compile Finder Sync extension smoke
         if: runner.os == 'macOS'

@@ -1052,6 +1052,9 @@ describe("release script safeguards", () => {
     expect(build).toContain('"win/x64/7z.dll"');
     expect(build).toContain('"win/arm64/7z.dll"');
     expect(windows.bundle.resources["binaries/7z.dll"]).toBe("7z.dll");
+    expect(build).toContain('"win/x64/7z.sfx"');
+    expect(build).toContain('"win/arm64/7z.sfx"');
+    expect(windows.bundle.resources["binaries/7z.sfx"]).toBe("7z.sfx");
     expect(
       windows.bundle.fileAssociations.some((entry: { ext: string[] }) =>
         entry.ext.includes("rar"),

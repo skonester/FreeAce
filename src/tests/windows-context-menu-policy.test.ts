@@ -132,6 +132,8 @@ describe("Windows 11 context-menu manifest", () => {
 
     expect(Object.keys(tauriConfig.bundle.resources)).toEqual([
       "binaries/7z.dll",
+      "binaries/7z.sfx",
+      "binaries/freeace.sfx",
     ]);
     expect(tauriConfig.bundle.windows?.signCommand).toBeUndefined();
     expect(packageJson.scripts["tauri:build"]).not.toContain(

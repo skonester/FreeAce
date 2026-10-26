@@ -1,7 +1,9 @@
 {
   "bundle": {
     "resources": {
-      "binaries/7z.dll": "7z.dll"
+      "binaries/7z.dll": "7z.dll",
+      "binaries/7z.sfx": "7z.sfx",
+      "binaries/freeace.sfx": "freeace.sfx"
     },
     "fileAssociations": [
       {

@@ -25,7 +25,10 @@ import {
   invokeRunFreeace,
   type Run7zRequest,
 } from "./archive/backend-ipc";
-import { isFreeaceOutputPath } from "./archive/freeace-format";
+import {
+  buildFreeaceExtractArgs,
+  isFreeaceOutputPath,
+} from "./archive/freeace-format";
 import { formatCommandOutputForLogs } from "./output-logging";
 import {
   installNativeWebviewContextMenuGuard,
@@ -757,7 +760,7 @@ async function run() {
   const isFreeace = isFreeaceOutputPath(archivePath);
   isFreeaceExtraction = isFreeace;
   const args = isFreeace
-    ? ["x", archivePath, destination]
+    ? buildFreeaceExtractArgs(archivePath, destination)
     : [
         "x",
         `-o${destination}`,

@@ -40,8 +40,10 @@ describe("bundled 7-Zip provenance", () => {
       "mac/7zz",
       "win/arm64/7z.dll",
       "win/arm64/7z.exe",
+      "win/arm64/7z.sfx",
       "win/x64/7z.dll",
       "win/x64/7z.exe",
+      "win/x64/7z.sfx",
     ]);
     expect(Object.keys(provenance.artifacts).sort()).toEqual(
       Object.keys(checksums).sort(),

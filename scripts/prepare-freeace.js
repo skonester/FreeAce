@@ -13,6 +13,9 @@ import { spawnSync } from "child_process";
 const root = process.cwd();
 const gleipnirSource = path.join(root, "third_party", "gleipnir", "gleipnir.c");
 const zlibDir = path.join(root, "third_party", "zlib");
+// FreeAce's self-extracting stub: the whole engine plus a small interactive
+// front end. Bundled as a Windows resource; Rust appends archives to it.
+const sfxSource = path.join(root, "src-tauri", "sfx", "freeace-sfx.c");
 const outDir = path.join(root, "src-tauri", "binaries");
 
 const ZLIB_SOURCES = [
@@ -116,7 +119,7 @@ function buildMacUniversal(outputPath) {
   ]);
 }
 
-function buildWindows(outputPath) {
+function buildWindows(outputPath, source = gleipnirSource) {
   // clang auto-targets the installed MSVC toolchain (cl.exe/link.exe) on
   // Windows and is what this was developed and verified against; it also
   // accepts the same GCC-style flags gleipnir.c's own build scripts use.
@@ -137,7 +140,7 @@ function buildWindows(outputPath) {
     "-w",
     "-o",
     outputPath,
-    gleipnirSource,
+    source,
     ...zlibSources,
     "-I",
     zlibDir,
@@ -174,6 +177,9 @@ function main() {
 
   if (process.platform === "win32") {
     buildWindows(outputPath);
+    const sfxPath = path.join(outDir, "freeace.sfx");
+    buildWindows(sfxPath, sfxSource);
+    console.log(`freeace SFX stub ready: ${sfxPath}`);
   } else if (process.platform === "darwin") {
     buildMacUniversal(outputPath);
     // Same one universal binary under every arch-specific sidecar name

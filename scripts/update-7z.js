@@ -179,6 +179,7 @@ function sourceDefinitions(version) {
       artifacts: [
         { asset: "win/arm64/7z.dll", member: "7z.dll" },
         { asset: "win/arm64/7z.exe", member: "7z.exe" },
+        { asset: "win/arm64/7z.sfx", member: "7z.sfx" },
       ],
     },
     {
@@ -188,6 +189,7 @@ function sourceDefinitions(version) {
       artifacts: [
         { asset: "win/x64/7z.dll", member: "7z.dll" },
         { asset: "win/x64/7z.exe", member: "7z.exe" },
+        { asset: "win/x64/7z.sfx", member: "7z.sfx" },
       ],
       license: {
         asset: "7ZIP_LICENSE_WINDOWS.txt",

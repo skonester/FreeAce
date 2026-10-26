@@ -152,14 +152,43 @@ fn validate_journal(primary: &Path, paths: &Paths, output: &Path) -> Result<(), 
     Ok(())
 }
 
-fn open(request: &Request, writable: bool) -> Result<(State, Paths), String> {
-    if request
-        .archive
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("freeace"))
-    {
-        return Err("The FreeAce format does not yet support consuming extraction. Turn off in-place extraction to extract this archive.".into());
+/// HatchZip decodes FreeAce members through the bundled Gleipnir sidecar.
+fn configure_freeace_decoder(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    let command: std::process::Command = app
+        .shell()
+        .sidecar("gleipnir")
+        .map_err(|e| e.to_string())?
+        .into();
+    hatchzip_core::archive::freeace::set_decoder(PathBuf::from(command.get_program()));
+    Ok(())
+}
+
+/// Recovery records sit between segments and are truncated with them, so a
+/// damaged segment found halfway through could no longer be rebuilt. A full
+/// checksum scrub first (disk speed, nothing decoded) means that cannot
+/// happen. Only a fresh run can be scrubbed: a resumed archive has lost its
+/// end, and every member is still verified as it is decoded.
+fn scrub_freeace(app: &tauri::AppHandle, archive: &Path) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    let mut command: std::process::Command = app
+        .shell()
+        .sidecar("gleipnir")
+        .map_err(|e| e.to_string())?
+        .args(["t", "-q"])
+        .arg(archive.as_os_str())
+        .into();
+    let output = command.output().map_err(|e| e.to_string())?;
+    if output.status.success() {
+        return Ok(());
     }
+    Err(format!(
+        "This FreeAce archive did not pass its integrity check, so it was not consumed. Extract it normally (or repair it) instead. {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    ))
+}
+
+fn open(request: &Request, writable: bool) -> Result<(State, Paths), String> {
     plain_path(&request.archive)?;
     plain_path(&request.destination)?;
     let (primary, paths) = session::locate(&request.archive).map_err(|e| format!("{e:#}"))?;
@@ -178,8 +207,11 @@ fn open(request: &Request, writable: bool) -> Result<(State, Paths), String> {
     )
     .map_err(|e| format!("{e:#}"))?;
     if let State::Fresh(job, _) | State::Resume(job, _) = &state {
-        if !matches!(job.format_name, "zip" | "7z" | "tar" | "tar.gz") {
-            return Err("In-place extraction supports ZIP, 7z, tar and tar.gz archives and their numbered split volumes. Use ordinary extraction for this format.".into());
+        if !matches!(
+            job.format_name,
+            "zip" | "7z" | "tar" | "tar.gz" | hatchzip_core::archive::freeace::NAME
+        ) {
+            return Err("In-place extraction supports ZIP, 7z, tar, tar.gz and FreeAce archives, plus numbered ZIP and 7z split volumes. Use ordinary extraction for this format.".into());
         }
         for part in job.storage.parts() {
             plain_path(&part.path)?;
@@ -259,10 +291,16 @@ pub async fn plan_in_place_extract(
     let request: Request = serde_json::from_str(&request_json).map_err(|e| e.to_string())?;
     let owner = window.label().to_owned();
     let slot = Slot::claim(app.clone(), &owner)?;
+    configure_freeace_decoder(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let _slot = slot;
         let (state, paths) = open(&request, false)?;
         let resuming = !matches!(state, State::Fresh(..));
+        if let State::Fresh(job, _) = &state {
+            if job.format_name == hatchzip_core::archive::freeace::NAME {
+                scrub_freeace(&app, job.storage.primary())?;
+            }
+        }
         let plan = match &state {
             State::Fresh(job, out) => Some(session::plan(job, out, false, KEEP_FREE, false)),
             State::Resume(job, j) => Some(session::plan(job, &j.output, true, KEEP_FREE, false)),
@@ -337,6 +375,7 @@ pub async fn run_in_place_extract(
     token: String,
 ) -> Result<ResultInfo, String> {
     let slot = Slot::claim(app.clone(), window.label())?;
+    configure_freeace_decoder(&app)?;
     let pending = {
         let state = app.state::<InPlacePlans>();
         let mut pending = state.0.lock().map_err(|_| "Plan lock poisoned")?;
@@ -360,9 +399,13 @@ pub async fn run_in_place_extract(
         drop(view);
         if slot.stop.load(Ordering::Relaxed) { return Ok(ResultInfo { paused: true }); }
         let (state, paths) = open(&pending.request, true)?;
-        execute(state, paths, &slot.stop, move |percent| {
+        let paused = execute(state, paths, &slot.stop, move |percent| {
             let _ = window.emit("7z-progress-structured", serde_json::json!({"percent": percent}));
-        }).map(|paused| ResultInfo { paused })
+        })?;
+        if !paused {
+            crate::launch::remember_openable_directory(&slot.app, &pending.request.destination);
+        }
+        Ok(ResultInfo { paused })
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -605,6 +648,7 @@ mod tests {
             return;
         };
         let request: Request = serde_json::from_slice(&fs::read(request).unwrap()).unwrap();
+        test_decoder();
         let (state, paths) = open(&request, true).unwrap();
         assert!(!execute(state, paths, &AtomicBool::new(false), |_| {}).unwrap());
     }
@@ -710,6 +754,209 @@ mod tests {
             );
         }
         assert!(!request.archive.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The sidecar `npm run prepare:freeace` builds; FreeAce tests skip
+    /// (pass) without it, like the bundled 7-Zip roundtrip tests.
+    fn test_decoder() -> Option<PathBuf> {
+        let triple = match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("windows", arch) => format!("{arch}-pc-windows-msvc.exe"),
+            ("macos", arch) => format!("{arch}-apple-darwin"),
+            (_, arch) => format!("{arch}-unknown-linux-gnu"),
+        };
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(format!("gleipnir-{triple}"));
+        path.is_file().then(|| {
+            hatchzip_core::archive::freeace::set_decoder(path.clone());
+            path
+        })
+    }
+
+    fn freeace_expected() -> Vec<(&'static str, Vec<u8>)> {
+        let data = payload();
+        let reversed: Vec<u8> = data.iter().rev().copied().collect();
+        vec![
+            ("a.bin", data.clone()),
+            // Identical to a.bin, so Gleipnir stores it once and both share a unit.
+            ("copy-of-a.bin", data),
+            ("nested/c.bin", reversed),
+            ("empty.txt", Vec::new()),
+            ("nested/note.txt", b"freeace fixture payload\n".to_vec()),
+        ]
+    }
+
+    fn make_freeace(dir: &Path, gleipnir: &Path) -> Request {
+        let source = dir.join("source");
+        for (name, bytes) in freeace_expected() {
+            let path = source.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        let archive = dir.join("recovery.freeace");
+        let made = std::process::Command::new(gleipnir)
+            .args(["c", "-1", "-q"])
+            .arg(&archive)
+            .arg(&source)
+            .output()
+            .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
+        Request {
+            archive,
+            destination: dir.join("output"),
+            password: None,
+        }
+    }
+
+    fn assert_freeace_output(request: &Request) {
+        for (name, bytes) in freeace_expected() {
+            assert_eq!(
+                fs::read(request.destination.join(name)).unwrap(),
+                bytes,
+                "{name}"
+            );
+        }
+        assert!(!request.archive.exists());
+        assert!(!Paths::for_archive(&request.archive).journal.exists());
+        assert!(!Paths::for_archive(&request.archive).tail.exists());
+    }
+
+    #[test]
+    fn freeace_extracts_in_place_with_shared_and_empty_members() {
+        let Some(gleipnir) = test_decoder() else {
+            return;
+        };
+        let dir = workspace("freeace");
+        let request = make_freeace(&dir, &gleipnir);
+        let before = fs::read(&request.archive).unwrap();
+        let (view, paths) = open(&request, false).unwrap();
+        let State::Fresh(job, _) = &view else {
+            panic!()
+        };
+        assert_eq!(job.format_name, "freeace");
+        // a.bin and its duplicate decode from one segment run: one unit.
+        assert_eq!(job.units.len(), 3);
+        assert_eq!(fs::read(&request.archive).unwrap(), before);
+        drop(view);
+        drop(paths);
+        let (state, paths) = open(&request, true).unwrap();
+        assert!(!execute(state, paths, &AtomicBool::new(false), |_| {}).unwrap());
+        assert_freeace_output(&request);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn freeace_crashes_after_output_and_journal_commits_resume_byte_for_byte() {
+        let Some(gleipnir) = test_decoder() else {
+            return;
+        };
+        for point in ["after-extract", "after-journal"] {
+            let dir = workspace("freeace-crash");
+            let request = make_freeace(&dir, &gleipnir);
+            let request_file = dir.join("request.json");
+            fs::write(
+                &request_file,
+                serde_json::to_vec(&serde_json::json!({
+                    "archive": request.archive, "destination": request.destination,
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let crashed = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "in_place::tests::crash_worker", "--nocapture"])
+                .env("FREEACE_IN_PLACE_TEST_REQUEST", &request_file)
+                .env("HATCHZIP_BATCH_ENTRIES", "1")
+                .env("HATCHZIP_CRASH_AT", point)
+                .env("HATCHZIP_CRASH_AFTER", "1")
+                .output()
+                .unwrap();
+            assert!(!crashed.status.success(), "worker did not crash at {point}");
+            assert!(
+                Paths::for_archive(&request.archive).exists(),
+                "worker failed before journaling: {}",
+                String::from_utf8_lossy(&crashed.stderr)
+            );
+            // The archive has lost its index by now; resume reads the saved one.
+            let (state, paths) = open(&request, true).unwrap();
+            assert!(matches!(state, State::Resume(..)), "{point}");
+            assert!(!execute(state, paths, &AtomicBool::new(false), |_| {}).unwrap());
+            assert_freeace_output(&request);
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn freeace_member_failing_verification_consumes_nothing_and_publishes_no_bad_data() {
+        let Some(gleipnir) = test_decoder() else {
+            return;
+        };
+        let dir = workspace("freeace-bad-segment");
+        let request = make_freeace(&dir, &gleipnir);
+        let mut bytes = fs::read(&request.archive).unwrap();
+        // The byte just below the index belongs to the highest segment, which
+        // is the first unit extracted.
+        let idxoff = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+        bytes[idxoff - 64] ^= 0xff;
+        fs::write(&request.archive, &bytes).unwrap();
+        let (state, paths) = open(&request, true).unwrap();
+        assert!(execute(state, paths, &AtomicBool::new(false), |_| {}).is_err());
+        assert_eq!(fs::read(&request.archive).unwrap(), bytes);
+        // Members decoded before the failure stay as uncommitted output, which
+        // the next run clears; nothing unverified may appear under a real name.
+        let expected: std::collections::HashMap<_, _> = freeace_expected()
+            .into_iter()
+            .map(|(name, data)| (request.destination.join(name), data))
+            .collect();
+        let published = walk_files(&request.destination);
+        assert!(published.len() < expected.len(), "{published:?}");
+        for path in published {
+            assert_eq!(
+                Some(&fs::read(&path).unwrap()),
+                expected.get(&path),
+                "{path:?}"
+            );
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn walk_files(root: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    out.push(path);
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn freeace_with_a_corrupt_index_is_refused_untouched() {
+        let Some(gleipnir) = test_decoder() else {
+            return;
+        };
+        let dir = workspace("freeace-corrupt");
+        let request = make_freeace(&dir, &gleipnir);
+        let mut bytes = fs::read(&request.archive).unwrap();
+        let last = bytes.len() - 30;
+        bytes[last] ^= 0xff;
+        fs::write(&request.archive, &bytes).unwrap();
+        assert!(open(&request, true).is_err());
+        assert_eq!(fs::read(&request.archive).unwrap(), bytes);
+        assert!(!request.destination.exists());
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -8,6 +8,7 @@ import {
   supportedMethodsForFormat,
 } from "./archive/format-capabilities";
 import { state } from "./state";
+import { syncSfxAvailability } from "./archive/sfx";
 import type { CustomPreset } from "./settings-model";
 
 export interface PresetConfig {
@@ -197,6 +198,7 @@ export function updateCompressionOptionsForFormat(format: string) {
   }
 
   updateSecurityControlsForFormat(format);
+  syncSfxAvailability(format);
 }
 
 export function applyPreset(name: string) {

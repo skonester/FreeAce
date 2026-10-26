@@ -113,6 +113,7 @@ describe("buildFreeaceExtractArgsFor", () => {
     setInputValue("extract-path", "/tmp/out");
     expect(buildFreeaceExtractArgsFor("archive.freeace")).toEqual([
       "x",
+      "-t0",
       "archive.freeace",
       "/tmp/out",
     ]);
@@ -121,7 +122,7 @@ describe("buildFreeaceExtractArgsFor", () => {
   it("prefers an explicit destination override", () => {
     setInputValue("extract-path", "/tmp/out");
     expect(buildFreeaceExtractArgsFor("archive.freeace", "/tmp/other")).toEqual(
-      ["x", "archive.freeace", "/tmp/other"],
+      ["x", "-t0", "archive.freeace", "/tmp/other"],
     );
   });
 
@@ -137,7 +138,14 @@ describe("buildFreeaceExtractArgsFor", () => {
         "a.txt",
         "dir/b.txt",
       ]),
-    ).toEqual(["x", "archive.freeace", "/tmp/out", "a.txt", "dir/b.txt"]);
+    ).toEqual([
+      "x",
+      "-t0",
+      "archive.freeace",
+      "/tmp/out",
+      "a.txt",
+      "dir/b.txt",
+    ]);
   });
 });
 

@@ -18,6 +18,7 @@ import {
   supportedMethodsForFormat,
 } from "./archive/format-capabilities";
 import { syncWorkspaceWindowFx } from "./window-fx";
+import { syncSfxAvailability } from "./archive/sfx";
 
 let settingsModalBasicWindowEffects: boolean | null = null;
 
@@ -70,8 +71,9 @@ export function applySettingsToForm() {
   $<HTMLSelectElement>("solid").value = state.currentSettings.solid;
   $<HTMLInputElement>("threads").value = String(state.currentSettings.threads);
   $<HTMLInputElement>("path-mode").value = "relative";
+  // SFX is a per-archive choice, never a persisted default.
   $<HTMLInputElement>("sfx").checked = false;
-  $<HTMLInputElement>("sfx").disabled = true;
+  syncSfxAvailability(state.currentSettings.format);
   $<HTMLInputElement>("encrypt-headers").checked =
     state.currentSettings.encryptHeaders;
   $<HTMLInputElement>("delete-after").checked = false;

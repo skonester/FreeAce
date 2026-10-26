@@ -1,8 +1,13 @@
 import { $ } from "../utils";
+import { isSfxRequested, resolveSfxOutputPath, SFX_SWITCH } from "./sfx";
 import { state } from "../state";
-import { validateFreeaceOutputExtension } from "./freeace-format";
+import {
+  buildFreeaceExtractArgs,
+  validateFreeaceOutputExtension,
+} from "./freeace-format";
 
 export {
+  buildFreeaceExtractArgs,
   isFreeaceOutputPath,
   validateFreeaceOutputExtension,
 } from "./freeace-format";
@@ -36,11 +41,18 @@ function freeaceThreadFlag(): string | null {
 }
 
 export function buildFreeaceCompressArgs(): string[] {
-  const outputPath = $<HTMLInputElement>("output-path").value;
+  const sfx = isSfxRequested();
+  const outputPath = resolveSfxOutputPath(
+    $<HTMLInputElement>("output-path").value,
+  );
   if (!outputPath) {
     throw new Error("Choose an output archive path.");
   }
-  const extensionError = validateFreeaceOutputExtension(outputPath);
+  const extensionError = sfx
+    ? outputPath.toLocaleLowerCase("en-US").endsWith(".exe")
+      ? null
+      : "Self-extracting archive output must end in .exe."
+    : validateFreeaceOutputExtension(outputPath);
   if (extensionError) throw new Error(extensionError);
   if (state.inputs.length === 0) {
     throw new Error("Add at least one input.");
@@ -49,6 +61,9 @@ export function buildFreeaceCompressArgs(): string[] {
   const flags = [freeacePresetFlag()];
   const threadFlag = freeaceThreadFlag();
   if (threadFlag) flags.push(threadFlag);
+  // Backend marker: Gleipnir writes a plain archive and run_freeace prepends
+  // the bundled self-extracting stub.
+  if (sfx) flags.push(SFX_SWITCH);
 
   return ["c", ...flags, outputPath, ...state.inputs];
 }
@@ -60,7 +75,7 @@ export function buildFreeaceExtractArgsFor(
 ): string[] {
   const dest = destinationOverride ?? $<HTMLInputElement>("extract-path").value;
   if (!dest) throw new Error("Choose a destination folder.");
-  return ["x", archive, dest, ...selectedPaths];
+  return buildFreeaceExtractArgs(archive, dest, selectedPaths);
 }
 
 export function buildFreeaceListArgs(archive: string): string[] {

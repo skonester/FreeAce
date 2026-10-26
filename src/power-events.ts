@@ -78,6 +78,7 @@ import {
 import { wireOsIntegrationEvents } from "./os-integration";
 import { runBenchmark } from "./benchmark";
 import { showToast } from "./toast";
+import { wireSfxToggles } from "./archive/sfx";
 import {
   isDebugEnabled,
   setDebugEnabled,
@@ -176,6 +177,7 @@ export async function runSetupWizardFlow(
 let eventsWired = false;
 
 export function wireEvents() {
+  wireSfxToggles();
   if (eventsWired) return;
   eventsWired = true;
   // Sync the output-path field when format changes so the extension updates

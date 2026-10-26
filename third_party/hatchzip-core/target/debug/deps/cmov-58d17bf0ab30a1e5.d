@@ -1,0 +1,11 @@
+C:\Users\admin\Documents\GitHub\FreeAce\third_party\hatchzip-core\target\debug\deps\cmov-58d17bf0ab30a1e5.d: C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\lib.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\macros.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\array.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\backends.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\backends\x86.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\slice.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\../README.md
+
+C:\Users\admin\Documents\GitHub\FreeAce\third_party\hatchzip-core\target\debug\deps\libcmov-58d17bf0ab30a1e5.rmeta: C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\lib.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\macros.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\array.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\backends.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\backends\x86.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\slice.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\../README.md
+
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\lib.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\macros.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\array.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\backends.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\backends\x86.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\slice.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cmov-0.5.4\src\../README.md:

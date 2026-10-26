@@ -7,6 +7,7 @@ import {
   validateCompressionSecurityOptions,
 } from "../compression-security";
 import { buildSelectiveExtractArgs } from "../selective-extract";
+import { isSfxRequested, resolveSfxOutputPath, SFX_SWITCH } from "./sfx";
 export { withPassword } from "../password-args";
 
 export function isEncryptedFlag(value: string): boolean {
@@ -168,7 +169,10 @@ export function buildArgs() {
     validateExtraArgs(extraArgs, "compress");
   }
 
-  const outputPath = $<HTMLInputElement>("output-path").value;
+  const sfx = isSfxRequested();
+  const outputPath = resolveSfxOutputPath(
+    $<HTMLInputElement>("output-path").value,
+  );
   if (!outputPath) {
     throw new Error("Choose an output archive path.");
   }
@@ -188,7 +192,13 @@ export function buildArgs() {
       "Split-volume archives cannot be updated. Create a new archive family instead.",
     );
   }
-  const extensionError = validateArchiveOutputExtension(outputPath, format);
+  // isSfxRequested already limits SFX to fresh 7z creates on Windows; the
+  // backend re-checks the full shape in validate_sfx_shape.
+  const extensionError = sfx
+    ? outputPath.toLocaleLowerCase("en-US").endsWith(".exe")
+      ? null
+      : "Self-extracting archive output must end in .exe."
+    : validateArchiveOutputExtension(outputPath, format);
   if (extensionError) throw new Error(extensionError);
   const inputShapeError = validateCompressionInputShape(
     format,
@@ -249,8 +259,14 @@ export function buildArgs() {
       );
     }
   } else if (splitSize) {
+    if (sfx) {
+      throw new Error(
+        "Self-extracting archives cannot be split into volumes. Turn off split size, or turn off the self-extracting option.",
+      );
+    }
     switches.push(`-v${splitSize}`);
   }
+  if (sfx) switches.push(SFX_SWITCH);
 
   const args = [
     updateMode ? "u" : "a",

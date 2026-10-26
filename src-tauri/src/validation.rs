@@ -11,7 +11,52 @@ const ALLOWED_7Z_COMMANDS: &[&str] = &["a", "u", "x", "l", "t", "b"];
 // Store symbolic/hard links as links on create/update (-snl/-snh). Frontend
 // also passes them; run_7z injects as defense in depth. Keep them out of
 // BLOCKED so those switches validate; frontend extra-args does not expose them.
-const BLOCKED_7Z_ARGS: &[&str] = &["-si", "-so", "-sdel", "-sfx", "-w", "-sns", "-sni", "-spf2"];
+const BLOCKED_7Z_ARGS: &[&str] = &["-si", "-so", "-sdel", "-w", "-sns", "-sni", "-spf2"];
+
+/// The only accepted SFX form. 7-Zip resolves a relative `-sfx<module>`
+/// against its working directory before its own folder, so the webview may
+/// never name a module: run_7z swaps this bare marker for the absolute path of
+/// the bundled, hash-checked 7z.sfx (see `resolve_bundled_sfx_module`).
+pub(crate) const SFX_MARKER: &str = "-sfx";
+
+/// SFX output is a 7z archive behind a Windows stub: one plain file, created
+/// fresh. Volumes cannot carry the stub, and update would rewrite an .exe.
+fn validate_sfx_shape(args: &[String], archive_output: Option<&str>) -> Result<(), String> {
+    let separator = args
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(args.len());
+    let before = &args[1..separator];
+    let markers = before
+        .iter()
+        .filter(|arg| arg.to_ascii_lowercase().starts_with(SFX_MARKER))
+        .count();
+    if markers == 0 {
+        return Ok(());
+    }
+    if markers > 1 {
+        return Err("The SFX switch may appear only once.".to_string());
+    }
+    if args[0] != "a" {
+        return Err("Self-extracting archives can only be created, not updated.".to_string());
+    }
+    if archive_type_switches(args)
+        .iter()
+        .any(|format| format != "7z")
+    {
+        return Err("Self-extracting archives must use the 7z format.".to_string());
+    }
+    if before
+        .iter()
+        .any(|arg| arg.to_ascii_lowercase().starts_with("-v"))
+    {
+        return Err("Self-extracting archives cannot be split into volumes.".to_string());
+    }
+    if !archive_output.is_some_and(|path| path.to_ascii_lowercase().ends_with(".exe")) {
+        return Err("Self-extracting archive output must end in .exe.".to_string());
+    }
+    Ok(())
+}
 
 fn has_embedded_listfile(arg: &str) -> bool {
     let lower = arg.to_ascii_lowercase();
@@ -384,6 +429,14 @@ pub fn validate_run_7z_args(args: &[String]) -> Result<(), String> {
         if BLOCKED_7Z_ARGS.iter().any(|b| lower.starts_with(b)) {
             return Err(format!("7z argument '{arg}' is not permitted."));
         }
+        if separator_index.is_none() && lower.starts_with(SFX_MARKER) {
+            if lower != SFX_MARKER {
+                return Err(format!(
+                    "7z argument '{arg}' is not permitted (the SFX module is backend-managed)."
+                ));
+            }
+            continue;
+        }
         // Reject @listfile references before -- (7z reads them as file lists with
         // unvalidated contents). After --, the leading @ is literal.
         if separator_index.is_none() && arg.starts_with('@') {
@@ -464,6 +517,7 @@ pub fn validate_run_7z_args(args: &[String]) -> Result<(), String> {
     if password_switches > 1 {
         return Err("Password switch may appear only once.".to_string());
     }
+    validate_sfx_shape(args, archive_output)?;
     if output_switches > 1 {
         return Err("Extraction output switch may appear only once.".to_string());
     }
@@ -734,8 +788,15 @@ pub fn validate_run_freeace_args(args: &[String]) -> Result<(), String> {
     }
 
     let mut positionals: Vec<&str> = Vec::new();
+    let mut sfx_markers = 0usize;
     for arg in args.iter().skip(1) {
         if arg == "--" {
+            continue;
+        }
+        // Gleipnir has no SFX switch: run_freeace strips this marker and
+        // prepends the bundled stub to the finished archive.
+        if arg == SFX_MARKER {
+            sfx_markers += 1;
             continue;
         }
         if arg.starts_with('-') {
@@ -749,6 +810,12 @@ pub fn validate_run_freeace_args(args: &[String]) -> Result<(), String> {
         }
         positionals.push(arg);
     }
+    if sfx_markers > 1 {
+        return Err("The SFX switch may appear only once.".to_string());
+    }
+    if sfx_markers == 1 && cmd != "c" {
+        return Err("Self-extracting output applies only to compression.".to_string());
+    }
 
     match cmd {
         "c" => {
@@ -758,9 +825,15 @@ pub fn validate_run_freeace_args(args: &[String]) -> Result<(), String> {
                         .to_string(),
                 );
             }
+            if sfx_markers == 1 && !positionals[0].to_ascii_lowercase().ends_with(".exe") {
+                return Err("Self-extracting archive output must end in .exe.".to_string());
+            }
         }
+        // `x archive [dir] [member...]`: members after the destination are
+        // exact-name filters from the browse picker; Gleipnir refuses unsafe
+        // member names itself, and `..` is already rejected above.
         "x" => {
-            if positionals.is_empty() || positionals.len() > 2 {
+            if positionals.is_empty() {
                 return Err(
                     "freeace extract requires an archive and an optional destination folder."
                         .to_string(),
@@ -1266,7 +1339,13 @@ mod tests {
 
     #[test]
     fn validate_run_7z_args_rejects_embedded_listfiles_and_sfx_modules() {
-        for switch in ["-ir@files.txt", "-xr@files.txt", "-sfx7z.sfx"] {
+        for switch in [
+            "-ir@files.txt",
+            "-xr@files.txt",
+            "-sfx7z.sfx",
+            r"-sfxC:\evil\stub.sfx",
+            "-SFX7zCon.sfx",
+        ] {
             let args = vec![
                 "a".to_string(),
                 switch.to_string(),
@@ -1276,6 +1355,55 @@ mod tests {
             ];
             assert!(validate_run_7z_args(&args).is_err(), "accepted {switch}");
         }
+    }
+
+    fn sfx_args(extra: &[&str], output: &str) -> Vec<String> {
+        let mut args = vec!["a".to_string(), "-sfx".to_string()];
+        args.extend(extra.iter().map(|arg| arg.to_string()));
+        args.extend([
+            output.to_string(),
+            "--".to_string(),
+            "input.txt".to_string(),
+        ]);
+        args
+    }
+
+    #[test]
+    fn validate_run_7z_args_accepts_bare_sfx_marker_for_7z_exe_create() {
+        validate_run_7z_args(&sfx_args(&["-t7z", "-mx=9"], r"C:\out\setup.exe"))
+            .expect("7z SFX create");
+        validate_run_7z_args(&sfx_args(&[], "setup.EXE")).expect("default format is 7z");
+    }
+
+    #[test]
+    fn validate_run_7z_args_rejects_unsafe_sfx_shapes() {
+        for (args, why) in [
+            (sfx_args(&["-tzip"], "out.exe"), "non-7z format"),
+            (sfx_args(&["-v100m"], "out.exe"), "volumes"),
+            (sfx_args(&[], "out.7z"), "non-exe output"),
+            (sfx_args(&["-sfx"], "out.exe"), "duplicate marker"),
+        ] {
+            assert!(validate_run_7z_args(&args).is_err(), "accepted {why}");
+        }
+        let update = vec![
+            "u".to_string(),
+            "-sfx".to_string(),
+            "out.exe".to_string(),
+            "--".to_string(),
+            "input.txt".to_string(),
+        ];
+        assert!(validate_run_7z_args(&update).is_err(), "accepted update");
+    }
+
+    #[test]
+    fn validate_run_7z_args_treats_sfx_like_names_after_separator_as_paths() {
+        let args = vec![
+            "a".to_string(),
+            "out.7z".to_string(),
+            "--".to_string(),
+            "-sfx-notes.txt".to_string(),
+        ];
+        validate_run_7z_args(&args).expect("literal input path");
     }
 
     #[test]
@@ -1495,10 +1623,11 @@ mod tests {
         .expect("compress with preset and thread flag");
         validate_run_freeace_args(&[
             "x".to_string(),
+            "-t0".to_string(),
             "archive.freeace".to_string(),
             "/tmp/dest".to_string(),
         ])
-        .expect("extract with destination");
+        .expect("extract with thread flag and destination");
         validate_run_freeace_args(&["l".to_string(), "archive.freeace".to_string()]).expect("list");
         validate_run_freeace_args(&["t".to_string(), "archive.freeace".to_string()]).expect("test");
     }
@@ -1526,12 +1655,49 @@ mod tests {
         .expect_err("parent-dir component in output path");
         validate_run_freeace_args(&["c".to_string(), "archive.freeace".to_string()])
             .expect_err("compress needs at least one input");
+        validate_run_freeace_args(&["x".to_string(), "-t0".to_string()])
+            .expect_err("extract needs an archive");
         validate_run_freeace_args(&[
             "x".to_string(),
             "a.freeace".to_string(),
-            "b".to_string(),
-            "c".to_string(),
+            "/tmp/out".to_string(),
+            "dir/../../escape.txt".to_string(),
         ])
-        .expect_err("extract accepts at most one destination");
+        .expect_err("parent-dir component in a member filter");
+    }
+
+    #[test]
+    fn validate_run_freeace_args_scopes_the_sfx_marker_to_exe_compress() {
+        let compress = |output: &str, extra: &[&str]| {
+            let mut args = vec!["c".to_string(), "-9".to_string(), "-sfx".to_string()];
+            args.extend(extra.iter().map(|arg| arg.to_string()));
+            args.extend([output.to_string(), "in".to_string()]);
+            args
+        };
+        validate_run_freeace_args(&compress(r"C:\out\setup.exe", &[])).expect("sfx compress");
+        validate_run_freeace_args(&compress("out.freeace", &[])).expect_err("non-exe output");
+        validate_run_freeace_args(&compress("out.exe", &["-sfx"])).expect_err("duplicate");
+        validate_run_freeace_args(&compress("out.exe", &["-sfxstub.bin"]))
+            .expect_err("module path");
+        validate_run_freeace_args(&[
+            "x".to_string(),
+            "-sfx".to_string(),
+            "a.exe".to_string(),
+            "/tmp/out".to_string(),
+        ])
+        .expect_err("sfx on extract");
+    }
+
+    #[test]
+    fn validate_run_freeace_args_accepts_selected_members_after_destination() {
+        validate_run_freeace_args(&[
+            "x".to_string(),
+            "-t0".to_string(),
+            "a.freeace".to_string(),
+            "/tmp/out".to_string(),
+            "dlc/one.bank".to_string(),
+            "dlc/two.png".to_string(),
+        ])
+        .expect("selective extract");
     }
 }

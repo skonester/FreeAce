@@ -56,9 +56,14 @@ const mappings = [
   { source: "linux/arm64/7zzs", target: "7z-aarch64-unknown-linux-gnu" },
 ];
 
-// Windows full-runtime DLLs are copied by the Rust build script, so verify them
-// here even though they are not standalone sidecars.
-const checksumOnlySources = ["win/arm64/7z.dll", "win/x64/7z.dll"];
+// Windows full-runtime DLLs and the GUI SFX module are copied by the Rust
+// build script, so verify them here even though they are not standalone sidecars.
+const checksumOnlySources = [
+  "win/arm64/7z.dll",
+  "win/arm64/7z.sfx",
+  "win/x64/7z.dll",
+  "win/x64/7z.sfx",
+];
 
 const requireAll =
   process.argv.includes("--all") || process.env.FREEACE_REQUIRE_ALL_7Z === "1";

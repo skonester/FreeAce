@@ -695,6 +695,71 @@ pub(crate) fn apply_backend_link_switches(args: &mut Vec<String>) {
     }
 }
 
+/// Replace the validated bare `-sfx` marker with the absolute path of the
+/// bundled GUI SFX module. 7-Zip resolves a relative module name against its
+/// working directory first, so only an absolute, hash-checked path is passed.
+pub(crate) fn resolve_bundled_sfx_module(
+    app: &tauri::AppHandle,
+    args: &mut [String],
+) -> Result<(), String> {
+    let separator = args
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(args.len());
+    let Some(index) = args[..separator]
+        .iter()
+        .position(|arg| arg.eq_ignore_ascii_case(crate::validation::SFX_MARKER))
+    else {
+        return Ok(());
+    };
+    let module = bundled_sfx_module(app)?;
+    args[index] = format!("-sfx{}", module.display());
+    Ok(())
+}
+
+#[cfg(windows)]
+fn bundled_sfx_module(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let (path, _) =
+        verified_bundled_sfx_resource(app, "7z.sfx", option_env!("FREEACE_7Z_SFX_SHA256"))?;
+    Ok(crate::launch::normalize_shell_open_path(path))
+}
+
+#[cfg(not(windows))]
+fn bundled_sfx_module(_app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    Err("Self-extracting archives are only available on Windows.".to_string())
+}
+
+/// A bundled SFX stub beside the app, read once and checked against the hash
+/// build.rs pinned for this build. Returns its path and the verified bytes.
+#[cfg(windows)]
+pub(crate) fn verified_bundled_sfx_resource(
+    app: &tauri::AppHandle,
+    name: &str,
+    expected: Option<&str>,
+) -> Result<(std::path::PathBuf, Vec<u8>), String> {
+    use sha2::Digest as _;
+    let unavailable = "The self-extracting archive module is not available in this build.";
+    let expected = expected.ok_or(unavailable)?;
+    let path = app
+        .path()
+        .resource_dir()
+        .map_err(|_| unavailable.to_string())?
+        .join(name);
+    let meta = std::fs::symlink_metadata(&path).map_err(|_| unavailable.to_string())?;
+    if crate::path_safety::is_link_or_reparse(&meta) || !meta.is_file() {
+        return Err(unavailable.to_string());
+    }
+    let bytes = std::fs::read(&path).map_err(|_| unavailable.to_string())?;
+    let actual = sha2::Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    if actual != expected {
+        return Err("The bundled self-extracting archive module failed its integrity check. Reinstall FreeAce.".to_string());
+    }
+    Ok((path, bytes))
+}
+
 /// Parsed bundled 7-Zip version from the last successful `probe_7z` (e.g. "26.03").
 pub(crate) const BUNDLED_7Z_VERSION: &str = "26.03";
 static PROBED_7Z_VERSION: Mutex<Option<String>> = Mutex::new(None);
@@ -1445,6 +1510,10 @@ pub async fn run_7z(
 
     harden_7z_args(&mut args);
     apply_backend_link_switches(&mut args);
+    if let Err(error) = resolve_bundled_sfx_module(&app, &mut args) {
+        release_prepare_slot_best_effort(&state);
+        return Err(error);
+    }
     let compound_tar_operation = is_compound_tar_operation(&args);
 
     if let Some("x" | "l" | "t") = args.first().map(String::as_str) {

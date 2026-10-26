@@ -1,0 +1,12 @@
+C:\Users\admin\Documents\GitHub\FreeAce\third_party\hatchzip-core\target\debug\deps\tar-3f52aefae1ec3f6a.d: C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\lib.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\archive.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\builder.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\entry.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\entry_type.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\error.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\header.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\pax.rs
+
+C:\Users\admin\Documents\GitHub\FreeAce\third_party\hatchzip-core\target\debug\deps\libtar-3f52aefae1ec3f6a.rmeta: C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\lib.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\archive.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\builder.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\entry.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\entry_type.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\error.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\header.rs C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\pax.rs
+
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\lib.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\archive.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\builder.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\entry.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\entry_type.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\error.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\header.rs:
+C:\Users\admin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tar-0.4.46\src\pax.rs:

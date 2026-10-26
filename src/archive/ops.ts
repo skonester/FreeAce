@@ -25,6 +25,7 @@ import {
   buildFreeaceExtractArgsFor,
   isFreeaceOutputPath,
 } from "./freeace-args";
+import { applySfxOutputPath } from "./sfx";
 import { sanitizeCommandArgsForPreview } from "./preview";
 import { confirmZipSymlinkRisk } from "./compress-fidelity";
 import { basename } from "../path-display";
@@ -151,6 +152,7 @@ export async function runAction() {
         setStatus("Cancelled", 2000);
         return;
       }
+      applySfxOutputPath();
       args = isFreeace ? buildFreeaceCompressArgs() : buildArgs();
       const outputPath = $<HTMLInputElement>("output-path").value;
       expectedArchiveIdentity = await invoke<string>(

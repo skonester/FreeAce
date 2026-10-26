@@ -743,7 +743,8 @@
                         >Self-extracting archives</span
                       >
                       <span class="setting-desc"
-                        >Not bundled in this build.</span
+                        >Chosen per archive in the compress options (Windows, 7z
+                        or FreeAce format).</span
                       >
                     </div>
                     <label class="switch">
@@ -1714,6 +1715,15 @@
                   <label class="basic-toggle" id="basic-encrypt-headers-row">
                     <input type="checkbox" id="basic-encrypt-headers" />
                     Encrypt file names
+                  </label>
+                  <label
+                    class="basic-toggle"
+                    id="basic-sfx-row"
+                    title="A 7z or FreeAce archive that unpacks itself when run, no archiver needed"
+                    hidden
+                  >
+                    <input type="checkbox" id="basic-sfx" disabled />
+                    Self-extracting .exe
                   </label>
                   <div class="basic-field">
                     <label class="basic-field__label" for="basic-split-size"
@@ -2743,9 +2753,14 @@
                           ><input type="checkbox" id="update-mode" />Update
                           existing archive</label
                         >
-                        <label class="toggle"
-                          ><input type="checkbox" id="sfx" disabled />SFX
-                          unavailable</label
+                        <label
+                          class="toggle"
+                          title="Windows only: a 7z or FreeAce archive that unpacks itself when run, no archiver needed"
+                          ><input
+                            type="checkbox"
+                            id="sfx"
+                            disabled
+                          />Self-extracting .exe</label
                         >
                         <label class="toggle"
                           ><input type="checkbox" id="encrypt-headers" />Encrypt

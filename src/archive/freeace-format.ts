@@ -10,6 +10,20 @@ export function isFreeaceOutputPath(path: string): boolean {
   return lower.endsWith(".freeace") || lower.endsWith(".tar.freeace");
 }
 
+/**
+ * Gleipnir decodes one segment per worker, and every segment of a member is
+ * independent, so `-t0` (all cores) is a pure speedup on the read side. The
+ * sidecar clamps the count to what installed RAM can hold, since each worker
+ * owns a full model (~1 GB at -9). Flags must precede the archive path.
+ */
+export function buildFreeaceExtractArgs(
+  archive: string,
+  destination: string,
+  selectedPaths: string[] = [],
+): string[] {
+  return ["x", "-t0", archive, destination, ...selectedPaths];
+}
+
 export function validateFreeaceOutputExtension(
   outputPath: string,
 ): string | null {
