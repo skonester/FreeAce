@@ -27,7 +27,7 @@ import {
 } from "./archive/backend-ipc";
 import {
   buildFreeaceExtractArgs,
-  isFreeaceOutputPath,
+  isFreeaceArchive,
 } from "./archive/freeace-format";
 import { formatCommandOutputForLogs } from "./output-logging";
 import {
@@ -757,7 +757,7 @@ async function run() {
 
   $("extract-status").textContent = "Extracting...";
 
-  const isFreeace = isFreeaceOutputPath(archivePath);
+  const isFreeace = await isFreeaceArchive(archivePath);
   isFreeaceExtraction = isFreeace;
   const args = isFreeace
     ? buildFreeaceExtractArgs(archivePath, destination)

@@ -210,6 +210,41 @@ fn has_zip_end_record_from_open_file(file: &mut std::fs::File) -> Result<bool, S
     Ok(false)
 }
 
+/// A self-extracting archive: an executable stub with a FreeAce or 7z archive
+/// after it. Gleipnir reads the former and 7-Zip the latter, each finding the
+/// payload itself, so only an extension-less match needs this.
+fn embedded_archive_kind(file: &mut std::fs::File) -> Option<&'static str> {
+    use hatchzip_core::archive::{contains_7z_start_header, freeace, EMBEDDED_7Z_SCAN};
+    let len = file.metadata().ok()?.len();
+    if freeace::locate(file, len).ok().flatten().is_some() {
+        return Some("freeace");
+    }
+    file.seek(SeekFrom::Start(0)).ok()?;
+    let mut head = Vec::new();
+    file.take(EMBEDDED_7Z_SCAN as u64)
+        .read_to_end(&mut head)
+        .ok()?;
+    contains_7z_start_header(&head).then_some("7z")
+}
+
+/// Whether `path` is a FreeAce archive, bare or inside a self-extracting
+/// `.exe`, so the frontend routes it to Gleipnir instead of 7-Zip.
+#[tauri::command]
+pub async fn detect_freeace_archive(path: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || is_freeace_file(&path))
+        .await
+        .map_err(|error| format!("FreeAce detection worker failed: {error}"))?
+}
+
+fn is_freeace_file(path: &str) -> Result<bool, String> {
+    let resolved = crate::path_safety::resolve_regular_file_input(std::path::Path::new(path))?;
+    let mut file = crate::path_safety::open_regular_file_nofollow(&resolved)?;
+    let len = file.metadata().map_err(|error| error.to_string())?.len();
+    Ok(hatchzip_core::archive::freeace::locate(&mut file, len)
+        .map_err(|error| error.to_string())?
+        .is_some())
+}
+
 fn extension_mismatch_reason(expected: &str, detected: Option<&str>, tar: bool) -> String {
     if expected == "tar" && tar {
         return String::new();
@@ -354,7 +389,7 @@ fn validate_archive_path_impl(path: &str, include_identity: bool) -> ArchivePath
         Some("xz") => signature == Some("xz"),
         Some("freeace") => signature == Some("freeace"),
         Some("tar") => tar,
-        _ => signature.is_some() || tar,
+        _ => signature.is_some() || tar || embedded_archive_kind(&mut selected_file).is_some(),
     };
 
     if valid {
@@ -616,6 +651,82 @@ mod tests {
             .unwrap_or_default()
             .contains("Extension indicates zip"));
 
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// Builds a FreeAce SFX and a 7z SFX with the prepared sidecars, the same
+    /// way compression publishes them. `None` when `npm run prepare:7z` and
+    /// `prepare:freeace` have not run.
+    #[cfg(windows)]
+    fn self_extracting_fixtures(dir: &std::path::Path) -> Option<(String, String)> {
+        let bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries");
+        let arch = std::env::consts::ARCH;
+        let gleipnir = bin.join(format!("gleipnir-{arch}-pc-windows-msvc.exe"));
+        let seven = bin.join(format!("7z-{arch}-pc-windows-msvc.exe"));
+        let (stub, module) = (bin.join("freeace.sfx"), bin.join("7z.sfx"));
+        if ![&gleipnir, &seven, &stub, &module]
+            .iter()
+            .all(|p| p.is_file())
+        {
+            return None;
+        }
+        std::fs::write(dir.join("in.txt"), b"payload").unwrap();
+        let plain = dir.join("plain.freeace");
+        let made = std::process::Command::new(&gleipnir)
+            .args(["c", "-1", "-q"])
+            .arg(&plain)
+            .arg(dir.join("in.txt"))
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let freeace_exe = dir.join("freeace-sfx.exe");
+        let mut joined = std::fs::read(&stub).unwrap();
+        joined.extend(std::fs::read(&plain).unwrap());
+        std::fs::write(&freeace_exe, joined).unwrap();
+        let seven_exe = dir.join("seven-sfx.exe");
+        let made = std::process::Command::new(&seven)
+            .current_dir(dir)
+            .args(["a", "-t7z", "-y"])
+            .arg(format!("-sfx{}", module.display()))
+            .arg(&seven_exe)
+            .args(["--", "in.txt"])
+            .output()
+            .unwrap();
+        assert!(made.status.success());
+        Some((
+            freeace_exe.to_string_lossy().into_owned(),
+            seven_exe.to_string_lossy().into_owned(),
+        ))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn self_extracting_exes_validate_and_only_freeace_routes_to_gleipnir() {
+        let base = std::env::temp_dir().join(format!(
+            "freeace-sfx-detect-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let Some((freeace_exe, seven_exe)) = self_extracting_fixtures(&base) else {
+            let _ = std::fs::remove_dir_all(base);
+            return;
+        };
+        assert!(validate_archive_path(&freeace_exe).valid);
+        assert!(validate_archive_path(&seven_exe).valid);
+        assert!(is_freeace_file(&freeace_exe).unwrap());
+        assert!(!is_freeace_file(&seven_exe).unwrap());
+
+        // An ordinary program carries neither payload.
+        let program = base.join("program.exe");
+        let mut bytes = vec![b'M', b'Z'];
+        bytes.extend(std::iter::repeat_n(0x90u8, 300_000));
+        std::fs::write(&program, bytes).unwrap();
+        let program = program.to_string_lossy().into_owned();
+        assert!(!validate_archive_path(&program).valid);
+        assert!(!is_freeace_file(&program).unwrap());
         let _ = std::fs::remove_dir_all(base);
     }
 

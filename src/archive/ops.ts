@@ -23,7 +23,7 @@ import { buildArgs, buildExtractArgsFor } from "./args";
 import {
   buildFreeaceCompressArgs,
   buildFreeaceExtractArgsFor,
-  isFreeaceOutputPath,
+  isFreeaceArchive,
 } from "./freeace-args";
 import { applySfxOutputPath } from "./sfx";
 import { sanitizeCommandArgsForPreview } from "./preview";
@@ -84,7 +84,7 @@ export async function runAction() {
 
   const isFreeace =
     mode === "extract"
-      ? isFreeaceOutputPath(state.inputs[0] ?? "")
+      ? await isFreeaceArchive(state.inputs[0] ?? "")
       : (document.getElementById("format") as HTMLSelectElement | null)
           ?.value === "freeace";
   lastActionBackend = isFreeace && !inPlace ? "freeace" : "7z";

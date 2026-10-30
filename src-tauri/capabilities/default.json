@@ -41,6 +41,7 @@
     "allow-is-freeace-running",
     "allow-probe-7z",
     "allow-validate-archive-paths",
+    "allow-detect-freeace-archive",
     "allow-load-settings",
     "allow-save-settings",
     "allow-reset-settings",

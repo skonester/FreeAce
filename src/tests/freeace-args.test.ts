@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import {
   buildFreeaceCompressArgs,
   buildFreeaceExtractArgsFor,
@@ -6,6 +7,7 @@ import {
   buildFreeaceTestArgs,
 } from "../archive/freeace-args";
 import {
+  isFreeaceArchive,
   isFreeaceOutputPath,
   validateFreeaceOutputExtension,
 } from "../archive/freeace-format";
@@ -162,5 +164,31 @@ describe("buildFreeaceListArgs / buildFreeaceTestArgs", () => {
       "t",
       "archive.freeace",
     ]);
+  });
+});
+
+describe("isFreeaceArchive", () => {
+  const invokeMock = vi.mocked(invoke);
+
+  it("trusts the .freeace extension without asking the backend", async () => {
+    invokeMock.mockClear();
+    expect(await isFreeaceArchive("C:\a\b.freeace")).toBe(true);
+    expect(await isFreeaceArchive("C:\a\b.7z")).toBe(false);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("asks the backend about an .exe, so 7z SFX still goes to 7-Zip", async () => {
+    invokeMock.mockResolvedValueOnce(true);
+    expect(await isFreeaceArchive("C:\a\DLC.exe")).toBe(true);
+    expect(invokeMock).toHaveBeenLastCalledWith("detect_freeace_archive", {
+      path: "C:\a\DLC.exe",
+    });
+    invokeMock.mockResolvedValueOnce(false);
+    expect(await isFreeaceArchive("C:\a\setup.EXE")).toBe(false);
+  });
+
+  it("treats a failed probe as not FreeAce", async () => {
+    invokeMock.mockRejectedValueOnce(new Error("gone"));
+    expect(await isFreeaceArchive("C:\a\DLC.exe")).toBe(false);
   });
 });

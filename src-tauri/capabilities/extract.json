@@ -14,6 +14,7 @@
     "allow-run-freeace",
     "allow-cancel-freeace",
     "allow-validate-archive-paths",
+    "allow-detect-freeace-archive",
     "allow-get-extract-paths",
     "allow-inspect-extract-destination",
     "allow-close-extract-window",

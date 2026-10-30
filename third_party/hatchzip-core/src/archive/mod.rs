@@ -336,9 +336,42 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
     if ext.ends_with(".tar") || ext.contains(".tar.") {
         return Ok("tar");
     }
+    // FreeAce self-extracting archives: stub in front, Gleipnir trailer last.
+    if freeace::locate(&mut storage.reader(None), storage.original_len())
+        .context("reading the archive")?
+        .is_some()
+    {
+        return Ok(freeace::NAME);
+    }
+    if starts(b"MZ") && has_embedded_7z_header(storage)? {
+        bail!(
+            "this is a self-extracting 7z archive, which cannot be extracted in place. \
+             Extract it normally"
+        );
+    }
     // Anything else gets a ZIP parse: self-extracting archives put an
     // executable in front, so the signature isn't at the start.
     Ok("zip")
+}
+
+/// A 7z start header within the first few megabytes, where 7-Zip's SFX stub
+/// puts the archive.
+fn has_embedded_7z_header(storage: &Storage) -> Result<bool> {
+    let mut head = vec![0u8; EMBEDDED_7Z_SCAN.min(storage.original_len() as usize)];
+    let n = read_up_to(&mut storage.reader(None), &mut head)?;
+    Ok(contains_7z_start_header(&head[..n]))
+}
+
+/// How far into a file a self-extracting 7z stub's archive is looked for.
+pub const EMBEDDED_7Z_SCAN: usize = 4 << 20;
+
+/// Whether `bytes` holds a 7z start header whose CRC verifies, which a stray
+/// copy of the six signature bytes (in a stub's code, say) would not.
+pub fn contains_7z_start_header(bytes: &[u8]) -> bool {
+    bytes.windows(32).any(|h| {
+        h.starts_with(b"7z\xBC\xAF\x27\x1C")
+            && crc32fast::hash(&h[12..32]) == u32::from_le_bytes(h[8..12].try_into().unwrap())
+    })
 }
 
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {

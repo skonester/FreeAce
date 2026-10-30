@@ -177,6 +177,14 @@ function main() {
 
   if (process.platform === "win32") {
     buildWindows(outputPath);
+    // A Windows dev host on the GNU Rust toolchain makes Tauri look the
+    // sidecar up by the -gnu triple; a stale copy there silently wins.
+    if (process.arch === "x64") {
+      fs.copyFileSync(
+        outputPath,
+        path.join(outDir, "gleipnir-x86_64-pc-windows-gnu.exe"),
+      );
+    }
     const sfxPath = path.join(outDir, "freeace.sfx");
     buildWindows(sfxPath, sfxSource);
     console.log(`freeace SFX stub ready: ${sfxPath}`);

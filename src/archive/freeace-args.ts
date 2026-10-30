@@ -8,6 +8,7 @@ import {
 
 export {
   buildFreeaceExtractArgs,
+  isFreeaceArchive,
   isFreeaceOutputPath,
   validateFreeaceOutputExtension,
 } from "./freeace-format";

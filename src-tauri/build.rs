@@ -372,6 +372,20 @@ fn prepare_7z_binaries() {
         }
     }
 
+    // tauri-build copies the Gleipnir sidecar into target/ only when this
+    // script runs, so a rebuilt sidecar has to rerun it.
+    let exe_suffix = if target_triple.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
+    println!(
+        "cargo:rerun-if-changed={}",
+        out_dir
+            .join(format!("gleipnir-{target_triple}{exe_suffix}"))
+            .display()
+    );
+
     // FreeAce's own SFX stub is compiled from source by prepare-freeace.js, so
     // there is no committed checksum; pin what this build bundles so run_freeace
     // can detect a stub swapped after install.
@@ -423,6 +437,7 @@ fn main() {
         "get_startup_recovery_status",
         "acknowledge_preserved_transaction",
         "validate_archive_paths",
+        "detect_freeace_archive",
         "load_settings",
         "save_settings",
         "reset_settings",

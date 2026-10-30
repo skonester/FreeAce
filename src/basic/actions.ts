@@ -23,7 +23,7 @@ import {
   ensureRuntimeReady,
   invokeGuardedRun7z,
 } from "../archive/runtime";
-import { isFreeaceOutputPath } from "../archive/freeace-args";
+import { isFreeaceArchive } from "../archive/freeace-args";
 import {
   archiveExtensionForFormat,
   isPreferredCompressParent,
@@ -446,7 +446,7 @@ export async function testArchivePassword(
 ): Promise<PasswordCheckResult> {
   // Gleipnir (.freeace) has no password support at all, so there is nothing
   // to verify -- and running it through 7z here would always fail closed.
-  if (isFreeaceOutputPath(archive)) return "ok";
+  if (await isFreeaceArchive(archive)) return "ok";
   if (!(await ensureRuntimeReady())) return "error";
   try {
     const args = ["t", "-spd"];
@@ -481,7 +481,7 @@ export async function isArchiveEncrypted(
   // with the 7z sidecar can't determine anything (7z can't open the format),
   // which used to fail closed as "assume encrypted" and dead-end every
   // Basic-mode .freeace extraction behind an unanswerable password prompt.
-  if (isFreeaceOutputPath(archivePath)) return false;
+  if (await isFreeaceArchive(archivePath)) return false;
 
   const cached = state.browseArchiveInfoByPath.get(archivePath);
   const cachedIdentity = state.browseArchiveIdentityByPath.get(archivePath);

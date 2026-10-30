@@ -787,7 +787,9 @@ mod tests {
         ]
     }
 
-    fn make_freeace(dir: &Path, gleipnir: &Path) -> Request {
+    /// With `sfx`, the archive is appended to the bundled FreeAce SFX stub
+    /// and named `.exe`, as SFX compression publishes it.
+    fn make_freeace(dir: &Path, gleipnir: &Path, sfx: bool) -> Request {
         let source = dir.join("source");
         for (name, bytes) in freeace_expected() {
             let path = source.join(name);
@@ -806,6 +808,16 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&made.stderr)
         );
+        let archive = if sfx {
+            let exe = dir.join("recovery.exe");
+            let mut joined = fs::read(gleipnir.with_file_name("freeace.sfx")).unwrap();
+            joined.extend(fs::read(&archive).unwrap());
+            fs::write(&exe, joined).unwrap();
+            fs::remove_file(&archive).unwrap();
+            exe
+        } else {
+            archive
+        };
         Request {
             archive,
             destination: dir.join("output"),
@@ -831,23 +843,25 @@ mod tests {
         let Some(gleipnir) = test_decoder() else {
             return;
         };
-        let dir = workspace("freeace");
-        let request = make_freeace(&dir, &gleipnir);
-        let before = fs::read(&request.archive).unwrap();
-        let (view, paths) = open(&request, false).unwrap();
-        let State::Fresh(job, _) = &view else {
-            panic!()
-        };
-        assert_eq!(job.format_name, "freeace");
-        // a.bin and its duplicate decode from one segment run: one unit.
-        assert_eq!(job.units.len(), 3);
-        assert_eq!(fs::read(&request.archive).unwrap(), before);
-        drop(view);
-        drop(paths);
-        let (state, paths) = open(&request, true).unwrap();
-        assert!(!execute(state, paths, &AtomicBool::new(false), |_| {}).unwrap());
-        assert_freeace_output(&request);
-        fs::remove_dir_all(dir).unwrap();
+        for sfx in [false, true] {
+            let dir = workspace("freeace");
+            let request = make_freeace(&dir, &gleipnir, sfx);
+            let before = fs::read(&request.archive).unwrap();
+            let (view, paths) = open(&request, false).unwrap();
+            let State::Fresh(job, _) = &view else {
+                panic!()
+            };
+            assert_eq!(job.format_name, "freeace");
+            // a.bin and its duplicate decode from one segment run: one unit.
+            assert_eq!(job.units.len(), 3);
+            assert_eq!(fs::read(&request.archive).unwrap(), before);
+            drop(view);
+            drop(paths);
+            let (state, paths) = open(&request, true).unwrap();
+            assert!(!execute(state, paths, &AtomicBool::new(false), |_| {}).unwrap());
+            assert_freeace_output(&request);
+            fs::remove_dir_all(dir).unwrap();
+        }
     }
 
     #[test]
@@ -855,9 +869,14 @@ mod tests {
         let Some(gleipnir) = test_decoder() else {
             return;
         };
-        for point in ["after-extract", "after-journal"] {
+        for (sfx, point) in [
+            (false, "after-extract"),
+            (false, "after-journal"),
+            (true, "after-extract"),
+            (true, "after-journal"),
+        ] {
             let dir = workspace("freeace-crash");
-            let request = make_freeace(&dir, &gleipnir);
+            let request = make_freeace(&dir, &gleipnir, sfx);
             let request_file = dir.join("request.json");
             fs::write(
                 &request_file,
@@ -896,7 +915,7 @@ mod tests {
             return;
         };
         let dir = workspace("freeace-bad-segment");
-        let request = make_freeace(&dir, &gleipnir);
+        let request = make_freeace(&dir, &gleipnir, false);
         let mut bytes = fs::read(&request.archive).unwrap();
         // The byte just below the index belongs to the highest segment, which
         // is the first unit extracted.
@@ -944,12 +963,51 @@ mod tests {
     }
 
     #[test]
+    fn self_extracting_7z_is_refused_clearly_and_untouched() {
+        let seven = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(format!("7z-{}-pc-windows-msvc.exe", std::env::consts::ARCH));
+        let module = seven.with_file_name("7z.sfx");
+        if !seven.is_file() || !module.is_file() {
+            return;
+        }
+        let dir = workspace("7z-sfx");
+        fs::write(
+            dir.join("hello.txt"),
+            b"freeace fixture payload
+",
+        )
+        .unwrap();
+        let archive = dir.join("hello.exe");
+        let made = std::process::Command::new(&seven)
+            .current_dir(&dir)
+            .args(["a", "-t7z", "-y"])
+            .arg(format!("-sfx{}", module.display()))
+            .arg(&archive)
+            .args(["--", "hello.txt"])
+            .output()
+            .unwrap();
+        assert!(made.status.success());
+        let before = fs::read(&archive).unwrap();
+        let request = Request {
+            archive: archive.clone(),
+            destination: dir.join("output"),
+            password: None,
+        };
+        let error = open(&request, true).err().expect("7z SFX must be refused");
+        assert!(error.contains("self-extracting 7z"), "{error}");
+        assert_eq!(fs::read(&archive).unwrap(), before);
+        assert!(!request.destination.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn freeace_with_a_corrupt_index_is_refused_untouched() {
         let Some(gleipnir) = test_decoder() else {
             return;
         };
         let dir = workspace("freeace-corrupt");
-        let request = make_freeace(&dir, &gleipnir);
+        let request = make_freeace(&dir, &gleipnir, false);
         let mut bytes = fs::read(&request.archive).unwrap();
         let last = bytes.len() - 30;
         bytes[last] ^= 0xff;

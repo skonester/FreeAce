@@ -394,6 +394,7 @@ fn main() {
             process::get_startup_recovery_status,
             process::acknowledge_preserved_transaction,
             archive_detect::validate_archive_paths,
+            archive_detect::detect_freeace_archive,
             settings_store::load_settings,
             settings_store::save_settings,
             settings_store::reset_settings,

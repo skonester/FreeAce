@@ -61,8 +61,13 @@ unchanged.
   (`gleipnir t`) first and refuses a damaged archive; repair it, or extract it
   normally. A resumed run cannot be scrubbed, but each member is still
   verified as it is decoded.
-- **Not supported:** FreeAce self-extracting `.exe` files, and archives whose
-  header does not record the index position.
+- **Self-extracting `.exe`.** A FreeAce SFX is recognised by its trailer and
+  the checksummed header after the stub. Unit offsets are taken in the file,
+  so the stub is reclaimed with the lowest unit, and the decoder is told where
+  the archive starts (`x -B`) once the index has been cut off. A 7z SFX is
+  refused; extract it normally.
+- **Not supported:** archives whose header does not record the index
+  position.
 
 Decoding a FreeAce archive costs as much CPU as compressing it did, so
 in-place extraction runs at the same speed as ordinary FreeAce extraction.

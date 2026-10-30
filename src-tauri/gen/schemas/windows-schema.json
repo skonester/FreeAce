@@ -447,6 +447,12 @@
           "markdownDescription": "Enables the debug_console_window_open command without any pre-configured scope."
         },
         {
+          "description": "Enables the detect_freeace_archive command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detect-freeace-archive",
+          "markdownDescription": "Enables the detect_freeace_archive command without any pre-configured scope."
+        },
+        {
           "description": "Enables the discard_in_place_plan command without any pre-configured scope.",
           "type": "string",
           "const": "allow-discard-in-place-plan",
@@ -787,6 +793,12 @@
           "type": "string",
           "const": "deny-debug-console-window-open",
           "markdownDescription": "Denies the debug_console_window_open command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the detect_freeace_archive command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detect-freeace-archive",
+          "markdownDescription": "Denies the detect_freeace_archive command without any pre-configured scope."
         },
         {
           "description": "Denies the discard_in_place_plan command without any pre-configured scope.",

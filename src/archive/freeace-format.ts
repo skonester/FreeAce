@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 /**
  * Extension helpers with no dependency on `../state` (which does eager DOM
  * lookups at module load time for the main workspace document). Shared by
@@ -8,6 +10,21 @@
 export function isFreeaceOutputPath(path: string): boolean {
   const lower = path.toLocaleLowerCase("en-US");
   return lower.endsWith(".freeace") || lower.endsWith(".tar.freeace");
+}
+
+/**
+ * Whether an archive to read is FreeAce: by extension, or for an `.exe` by
+ * content, since a FreeAce self-extracting archive must go to Gleipnir while
+ * a 7z one goes to 7-Zip. Output paths still use `isFreeaceOutputPath`.
+ */
+export async function isFreeaceArchive(path: string): Promise<boolean> {
+  if (isFreeaceOutputPath(path)) return true;
+  if (!/\.exe$/i.test(path)) return false;
+  try {
+    return (await invoke<boolean>("detect_freeace_archive", { path })) === true;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -3326,6 +3326,9 @@ static int VERBOSE = 1;
  * stream one member to stdout so the caller writes it durably itself. */
 static const char *INDEX_FROM = NULL;
 static int TO_STDOUT = 0;
+/* -B: where the archive starts in the file (after an SFX stub).  With -I the
+ * trailer is gone, so the SFX scan has nothing to anchor on. */
+static uint64_t BASE_AT = 0;
 #define PROGRESS_MIN (32u << 20)   /* below this a run is short enough to wait out */
 
 static uint64_t fsize64(FILE *f) {
@@ -3759,6 +3762,15 @@ static int arc_open(const char *path, Archive *a) {
     if (a->fsz < HDR_BYTES + TRL_BYTES) {
         fprintf(stderr, "gleipnir: %s: too short to be an archive\n", path);
         return -1;
+    }
+    if (BASE_AT) {
+        if (BASE_AT > a->fsz - HDR_BYTES) {
+            fprintf(stderr, "gleipnir: %s: -B is past the end of the file\n", path);
+            return -1;
+        }
+        a->base = BASE_AT;
+        a->fsz -= BASE_AT;
+        if (arc_seek(a, 0) != 0) return -1;
     }
     uint8_t hb[HDR_BYTES];
     if (fread(hb, 1, HDR_BYTES, a->f) != HDR_BYTES) return -1;
@@ -4530,6 +4542,7 @@ static void usage(void) {
       "            before in-place extraction truncated the archive)\n"
       "  -O        with x, write the one named member to stdout; trust it\n"
       "            only once the exit status confirms its SHA-256\n"
+      "  -BN       with -I, the archive starts N bytes into the file (SFX)\n"
       "  --version, --help\n"
       "\n"
       "cold storage:  gleipnir c -5 -t0 -p32 archive.gl /data   then verify with\n"
@@ -4602,6 +4615,11 @@ int main(int argc, char **argv) {
             else { usage(); return 1; }
         }
         else if (c == 'O' && !argv[a][2]) TO_STDOUT = 1;
+        else if (c == 'B') {
+            char *end = NULL;
+            BASE_AT = strtoull(argv[a] + 2, &end, 10);
+            if (!argv[a][2] || *end) { usage(); return 1; }
+        }
         else if (c == 'L') longform = 1;
         else if (c == 'D') deep = 1;
         else if (c == 'M') manifest = 1;
@@ -4645,6 +4663,10 @@ int main(int argc, char **argv) {
     /* -O: `x -O archive member`, exactly one member and no destination. */
     if ((INDEX_FROM || TO_STDOUT) && mode != 'd') {
         fprintf(stderr, "gleipnir: -I and -O apply to extraction only\n");
+        return 1;
+    }
+    if (BASE_AT && !INDEX_FROM) {
+        fprintf(stderr, "gleipnir: -B applies only with -I\n");
         return 1;
     }
     if (TO_STDOUT && argc - a != 1) {

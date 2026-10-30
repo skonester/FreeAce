@@ -33,10 +33,7 @@ import {
 } from "../selective-extract";
 import type { TreeNode } from "../selective-extract";
 import { buildExtractArgsFor } from "./args";
-import {
-  buildFreeaceExtractArgsFor,
-  isFreeaceOutputPath,
-} from "./freeace-args";
+import { buildFreeaceExtractArgsFor, isFreeaceArchive } from "./freeace-args";
 import { sanitizeCommandArgsForPreview } from "./preview";
 import { debugLog, debugLogCommand, isDebugEnabled } from "../debug-mode";
 import {
@@ -796,7 +793,7 @@ export async function runSelectiveExtractFromModal(): Promise<void> {
       showToast("Select an archive to extract.", "info");
       return;
     }
-    const isFreeace = isFreeaceOutputPath(archive);
+    const isFreeace = await isFreeaceArchive(archive);
 
     if (!isFreeace && !(await ensureRuntimeReady())) return;
     if (state.cancelRequested) {

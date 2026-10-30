@@ -20,7 +20,7 @@ import { parseFreeaceListing } from "./freeace-listing";
 import {
   buildFreeaceListArgs,
   buildFreeaceTestArgs,
-  isFreeaceOutputPath,
+  isFreeaceArchive,
 } from "./freeace-args";
 import { registerBrowseArchiveLoader, renderBrowseTable } from "./browse-ui";
 import {
@@ -57,7 +57,7 @@ export async function testArchive(): Promise<ArchiveTestResult> {
       return "failed";
     }
 
-    const isFreeace = isFreeaceOutputPath(archive);
+    const isFreeace = await isFreeaceArchive(archive);
     let args: string[];
     if (isFreeace) {
       args = buildFreeaceTestArgs(archive);
@@ -174,7 +174,7 @@ export async function browseArchive(): Promise<ArchiveInfo | null> {
       return null;
     }
 
-    const isFreeace = isFreeaceOutputPath(archive);
+    const isFreeace = await isFreeaceArchive(archive);
     let args: string[];
     if (isFreeace) {
       args = buildFreeaceListArgs(archive);

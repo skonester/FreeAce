@@ -62,23 +62,77 @@ struct Freeace {
     tail_bytes: Arc<Vec<u8>>,
     /// Member names per unit, in the order of the unit's items.
     names: Vec<Vec<String>>,
+    /// Bytes of SFX stub before the archive; 0 for a bare archive.
+    base: u64,
+}
+
+fn header_plausible(h: &[u8]) -> bool {
+    &h[..4] == MAGIC && u16_at(h, 4) == VERSION && xxh64(&h[..40]) == u64_at(h, 40)
+}
+
+/// Where the FreeAce archive in a file starts: 0 for a bare archive, or the
+/// end of a self-extracting stub (mirrors `find_sfx_base` in gleipnir.c).
+/// `None` if the file holds no readable FreeAce archive.
+///
+/// The trailer gives the index's absolute position; an SFX archive starts at
+/// the one header whose checksum holds and whose stored index offset lands
+/// exactly there.
+pub fn locate<R: Read + Seek>(r: &mut R, len: u64) -> io::Result<Option<u64>> {
+    const SCAN_MAX: u64 = 64 << 20;
+    const CHUNK: usize = 1 << 16;
+    if len < HDR_BYTES + TRL_BYTES {
+        return Ok(None);
+    }
+    let mut trailer = [0u8; TRL_BYTES as usize];
+    r.seek(SeekFrom::Start(len - TRL_BYTES))?;
+    r.read_exact(&mut trailer)?;
+    let ixn = u64_at(&trailer, 8);
+    if &trailer[16..] != MAGIC || ixn > len - HDR_BYTES - TRL_BYTES {
+        return Ok(None);
+    }
+    let ixoff_abs = len - TRL_BYTES - ixn;
+    let mut header = [0u8; HDR_BYTES as usize];
+    r.seek(SeekFrom::Start(0))?;
+    r.read_exact(&mut header)?;
+    if header_plausible(&header) {
+        return Ok(Some(0));
+    }
+    let limit = ixoff_abs.min(SCAN_MAX);
+    let mut buf = vec![0u8; CHUNK + HDR_BYTES as usize];
+    let mut at = 0u64;
+    while at < limit {
+        r.seek(SeekFrom::Start(at))?;
+        let mut got = 0;
+        while got < buf.len() {
+            match r.read(&mut buf[got..])? {
+                0 => break,
+                n => got += n,
+            }
+        }
+        let mut i = 0;
+        while i + HDR_BYTES as usize <= got && at + (i as u64) < limit {
+            let h = &buf[i..i + HDR_BYTES as usize];
+            if h[0] == MAGIC[0] && header_plausible(h) && at + i as u64 + u64_at(h, 24) == ixoff_abs
+            {
+                return Ok(Some(at + i as u64));
+            }
+            i += 1;
+        }
+        at += CHUNK as u64;
+    }
+    Ok(None)
 }
 
 pub fn open(storage: &Arc<Storage>, tail: Option<Arc<Tail>>) -> Result<Opened> {
     let mut r = storage.reader(tail);
     let len = storage.original_len();
-    if len < HDR_BYTES + TRL_BYTES {
-        return Err(Damaged(anyhow!("the FreeAce archive is too short")).into());
-    }
+    let base = locate(&mut r, len)
+        .context("reading the FreeAce archive")?
+        .ok_or_else(|| Damaged(anyhow!("the FreeAce archive header or index is unreadable")))?;
     let mut header = [0u8; HDR_BYTES as usize];
+    r.seek(SeekFrom::Start(base))?;
     r.read_exact(&mut header)
         .context("reading the FreeAce header")?;
-    if &header[..4] != MAGIC || u16_at(&header, 4) != VERSION {
-        bail!("this FreeAce archive uses a format version this build cannot read");
-    }
-    if xxh64(&header[..40]) != u64_at(&header, 40) {
-        return Err(Damaged(anyhow!("the FreeAce archive header is corrupt")).into());
-    }
     let idxoff = u64_at(&header, 24);
 
     let mut trailer = [0u8; TRL_BYTES as usize];
@@ -87,10 +141,13 @@ pub fn open(storage: &Arc<Storage>, tail: Option<Arc<Tail>>) -> Result<Opened> {
         .context("reading the FreeAce trailer")?;
     let ixh = u64_at(&trailer, 0);
     let ixn = u64_at(&trailer, 8);
-    if &trailer[16..] != MAGIC || ixn > INDEX_MAX || ixn > len - HDR_BYTES - TRL_BYTES {
+    if ixn > INDEX_MAX {
         return Err(Damaged(anyhow!("the FreeAce archive index is unreadable")).into());
     }
-    let ixoff = len - TRL_BYTES - ixn;
+    // Offsets inside the archive are relative to its header; the file adds
+    // `base` for an SFX stub in front.
+    let ixoff_abs = len - TRL_BYTES - ixn;
+    let ixoff = ixoff_abs - base;
     // The decoder reopens a shortened archive from the header's copy of this
     // offset, so it must agree with the trailer before anything is consumed.
     if idxoff != ixoff {
@@ -100,14 +157,18 @@ pub fn open(storage: &Arc<Storage>, tail: Option<Arc<Tail>>) -> Result<Opened> {
         );
     }
     let mut tail_bytes = vec![0u8; (ixn + TRL_BYTES) as usize];
-    r.seek(SeekFrom::Start(ixoff))?;
+    r.seek(SeekFrom::Start(ixoff_abs))?;
     r.read_exact(&mut tail_bytes)
         .context("reading the FreeAce index")?;
     if xxh64(&tail_bytes[..ixn as usize]) != ixh {
         return Err(Damaged(anyhow!("the FreeAce archive index is corrupt")).into());
     }
     let (members, segs) = parse_index(&tail_bytes[..ixn as usize], ixoff)?;
-    let (units, names) = build_units(&members, &segs, ixoff)?;
+    let (mut units, names) = build_units(&members, &segs, ixoff)?;
+    // The lowest unit stays at 0 so it takes the stub along with the header.
+    for unit in units.iter_mut().filter(|u| u.start > 0) {
+        unit.start += base;
+    }
 
     Ok(Opened {
         name: NAME,
@@ -115,9 +176,10 @@ pub fn open(storage: &Arc<Storage>, tail: Option<Arc<Tail>>) -> Result<Opened> {
             storage: storage.clone(),
             tail_bytes: Arc::new(tail_bytes),
             names,
+            base,
         }),
         units,
-        tail_start: ixoff,
+        tail_start: ixoff_abs,
     })
 }
 
@@ -299,8 +361,13 @@ struct FreeaceWorker<'a> {
 impl Worker for FreeaceWorker<'_> {
     fn extract(&mut self, unit: &Unit, sink: &mut dyn Sink) -> Result<()> {
         for (item, name) in unit.items.iter().zip(&self.fmt.names[unit.key]) {
-            let mut data =
-                Decoded::spawn(&self.decoder, &self.index, self.fmt.storage.primary(), name)?;
+            let mut data = Decoded::spawn(
+                &self.decoder,
+                &self.index,
+                self.fmt.storage.primary(),
+                self.fmt.base,
+                name,
+            )?;
             sink.item(item, &mut data)?;
         }
         Ok(())
@@ -323,12 +390,17 @@ impl Decoded {
         decoder: &std::path::Path,
         index: &std::path::Path,
         archive: &std::path::Path,
+        base: u64,
         name: &str,
     ) -> Result<Self> {
         let mut cmd = Command::new(decoder);
-        cmd.args(["x", "-q", "-t0", "-O", "-I"])
-            .arg(index)
-            .arg(archive)
+        cmd.args(["x", "-q", "-t0", "-O", "-I"]).arg(index);
+        // With the index cut off, the decoder cannot find an SFX payload by
+        // scanning, so it is told where the archive starts.
+        if base > 0 {
+            cmd.arg(format!("-B{base}"));
+        }
+        cmd.arg(archive)
             .arg(name)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
