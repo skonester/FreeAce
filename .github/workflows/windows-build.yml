@@ -75,6 +75,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          # Secrets pasted into the GitHub UI often pick up a trailing newline,
+          # which the minisign base64 decoder rejects.
+          export TAURI_SIGNING_PRIVATE_KEY="$(printf '%s' "${TAURI_SIGNING_PRIVATE_KEY:-}" | tr -d '[:space:]')"
           config=()
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             config=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
