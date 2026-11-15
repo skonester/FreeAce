@@ -7,7 +7,7 @@
   "description": "Cross-platform 7z + FreeAce GUI built with Tauri.",
   "type": "module",
   "engines": {
-    "node": "^22.22.2 || ^24.15.0 || >=26.0.0",
+    "node": "^24.22.1 || >=26.12.1",
     "npm": ">=12.0.1"
   },
   "scripts": {

@@ -26,7 +26,7 @@ const npmDevAuditScript = fileURLToPath(
 );
 
 export const MINIMUM_NPM_VERSION = "12.0.1";
-export const SUPPORTED_NODE_VERSIONS = "^22.22.2 || ^24.15.0 || >=26.0.0";
+export const SUPPORTED_NODE_VERSIONS = "^24.22.1 || >=26.12.1";
 export const STABLE_RUST_CHANNEL = "stable";
 
 export function parseVersion(value) {
@@ -49,9 +49,8 @@ export function isVersionAtLeast(value, minimum) {
 
 export function isSupportedNodeVersion(value) {
   const [major] = parseVersion(value);
-  if (major === 22) return isVersionAtLeast(value, "22.22.2");
-  if (major === 24) return isVersionAtLeast(value, "24.15.0");
-  return major >= 26;
+  if (major === 24) return isVersionAtLeast(value, "24.22.1");
+  return major >= 26 && isVersionAtLeast(value, "26.12.1");
 }
 
 export function hasStableRustToolchain(output, channel = STABLE_RUST_CHANNEL) {

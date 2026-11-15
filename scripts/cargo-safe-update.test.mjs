@@ -34,6 +34,7 @@ import {
 } from "./cargo-safe-update.mjs";
 import {
   MINIMUM_NPM_VERSION,
+  SUPPORTED_NODE_VERSIONS,
   STABLE_RUST_CHANNEL,
   assertVendoredUpdaterParity,
   hasStableRustToolchain,
@@ -1573,13 +1574,15 @@ test("45. update environment versions fail closed at exact boundaries", () => {
   assert.equal(isVersionAtLeast("12.1.0", MINIMUM_NPM_VERSION), true);
   assert.equal(isVersionAtLeast("12.0.0", MINIMUM_NPM_VERSION), false);
   assert.equal(isVersionAtLeast("11.99.99", MINIMUM_NPM_VERSION), false);
-  assert.equal(isSupportedNodeVersion("22.22.2"), true);
-  assert.equal(isSupportedNodeVersion("22.22.1"), false);
+  assert.equal(isSupportedNodeVersion("22.23.4"), false);
   assert.equal(isSupportedNodeVersion("23.99.99"), false);
-  assert.equal(isSupportedNodeVersion("24.15.0"), true);
-  assert.equal(isSupportedNodeVersion("24.14.9"), false);
+  assert.equal(isSupportedNodeVersion("24.22.1"), true);
+  assert.equal(isSupportedNodeVersion("24.22.0"), false);
+  assert.equal(isSupportedNodeVersion("24.16.0"), false);
   assert.equal(isSupportedNodeVersion("25.99.99"), false);
-  assert.equal(isSupportedNodeVersion("26.0.0"), true);
+  assert.equal(isSupportedNodeVersion("26.12.0"), false);
+  assert.equal(isSupportedNodeVersion("26.12.1"), true);
+  assert.equal(isSupportedNodeVersion("27.0.0"), true);
   assert.throws(() => parseVersion("latest"), /Invalid semantic version/);
   assert.equal(
     hasStableRustToolchain(
@@ -1588,6 +1591,31 @@ test("45. update environment versions fail closed at exact boundaries", () => {
     true,
   );
   assert.equal(hasStableRustToolchain("1.97.1-aarch64-apple-darwin\n"), false);
+});
+
+test("45a. package engines and workflows use supported Node versions", () => {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const manifest = JSON.parse(
+    readFileSync(path.join(root, "package.json"), "utf8"),
+  );
+  const lock = JSON.parse(
+    readFileSync(path.join(root, "package-lock.json"), "utf8"),
+  );
+  assert.equal(manifest.engines.node, SUPPORTED_NODE_VERSIONS);
+  assert.equal(lock.packages[""].engines.node, SUPPORTED_NODE_VERSIONS);
+  for (const name of ["ci.yml", "windows-build.yml"]) {
+    const workflow = readFileSync(
+      path.join(root, ".github", "workflows", name),
+      "utf8",
+    );
+    const nodeVersion = workflow.match(/^\s*NODE_VERSION: "([^"]+)"$/m)?.[1];
+    assert.ok(nodeVersion, `${name} must declare NODE_VERSION`);
+    assert.equal(
+      isSupportedNodeVersion(nodeVersion),
+      true,
+      `${name} requires a supported Node version`,
+    );
+  }
 });
 
 test("46. npm lock update cannot install packages or run lifecycle scripts", () => {
