@@ -8,6 +8,14 @@ import {
 } from "../../scripts/sync-version-helpers.js";
 
 describe("macOS compatibility", () => {
+  it("uses one window-vibrancy version to avoid duplicate Objective-C classes", () => {
+    const cargoLock = fs.readFileSync(
+      path.resolve(process.cwd(), "src-tauri", "Cargo.lock"),
+      "utf8",
+    );
+    expect(cargoLock.match(/^name = "window-vibrancy"$/gm)).toHaveLength(1);
+  });
+
   it("requires macOS 26+ and a numeric bundle build version", () => {
     const config = JSON.parse(
       fs.readFileSync(
