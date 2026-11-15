@@ -39,6 +39,21 @@ async function setInputValue(selector, value) {
   await el.setValue(value);
 }
 
+async function setBasicDestination(selector, value) {
+  await $(selector).waitForExist({ timeout: 10_000 });
+  // Basic stores supplied destinations in hidden fields.
+  await browser.execute(
+    (inputSelector, destination) => {
+      const input = document.querySelector(inputSelector);
+      input.value = destination;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    selector,
+    value,
+  );
+}
+
 async function waitForArchiveIdle() {
   await browser.waitUntil(
     async () =>
@@ -64,6 +79,13 @@ async function extractArchiveTo(archive, dest, options = {}) {
   });
   await applyIncomingPaths([archive], "extract");
   if (options.password) {
+    await browser.execute(() => {
+      document
+        .getElementById("extract-password")
+        ?.closest("details")
+        ?.querySelector("summary")
+        ?.click();
+    });
     await setInputValue("#extract-password", options.password);
   }
   await setInputValue("#extract-path", dest);
@@ -136,14 +158,14 @@ describe("FreeAce main window", () => {
     );
   });
 
-  it("extracts hello.7z from Basic using a typed destination", async () => {
+  it("extracts hello.7z from Basic using a supplied destination", async () => {
     const archive = process.env.FREEACE_E2E_HELLO_7Z;
     const work = process.env.FREEACE_E2E_WORK;
     const dest = path.join(work, "basic-extract");
     const payload = process.env.FREEACE_E2E_PAYLOAD;
     fs.mkdirSync(dest, { recursive: true });
     await applyIncomingPaths([archive], "extract");
-    await setInputValue("#basic-extract-path", dest);
+    await setBasicDestination("#basic-extract-path", dest);
     await $("#basic-run-extract").click();
     const extracted = path.join(dest, "hello.txt");
     await browser.waitUntil(() => fs.existsSync(extracted), {
@@ -153,12 +175,12 @@ describe("FreeAce main window", () => {
     assert.equal(fs.readFileSync(extracted, "utf8"), payload);
   });
 
-  it("compresses hello.txt from Basic using a typed destination", async () => {
+  it("compresses hello.txt from Basic using a supplied destination", async () => {
     const input = process.env.FREEACE_E2E_HELLO_TXT;
     const output = path.join(process.env.FREEACE_E2E_WORK, "basic-compress.7z");
     await waitForArchiveIdle();
     await applyIncomingPaths([input], "compress");
-    await setInputValue("#basic-output-path", output);
+    await setBasicDestination("#basic-output-path", output);
     await $("#basic-run-compress").click();
     await browser.waitUntil(() => fs.existsSync(output), {
       timeout: 60_000,
