@@ -1,4 +1,5 @@
 import { state } from "./state";
+import { mountRequestedImages } from "./disk-images";
 import {
   devLog,
   log,
@@ -149,6 +150,10 @@ async function applyIncomingPathsUnlocked(
   mode: string,
   source: string,
 ): Promise<void> {
+  if (mode === "mount-image") {
+    await mountRequestedImages(paths);
+    return;
+  }
   if (mode === "compress") {
     // Append only within an existing compress session; otherwise drop leftovers
     // from extract/browse before merging the new handoff.

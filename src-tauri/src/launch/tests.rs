@@ -142,6 +142,15 @@ fn should_use_extract_window_honors_explicit_extract_mode() {
 }
 
 #[test]
+fn mount_launch_mode_stays_in_the_main_workspace() {
+    let (paths, mode) =
+        parse_open_request_args(["--mount-image".to_owned(), "disc.iso".to_owned()]);
+    assert_eq!(paths, ["disc.iso"]);
+    assert_eq!(mode, "mount-image");
+    assert!(!should_use_extract_window(&paths, &mode));
+}
+
+#[test]
 fn should_use_extract_window_accepts_compound_tar() {
     let paths = vec!["/downloads/bundle.tar.gz".to_string()];
     assert!(should_use_extract_window(&paths, "extract-explicit"));

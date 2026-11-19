@@ -35,7 +35,12 @@ async function applyIncomingPaths(paths, mode) {
 
 async function setInputValue(selector, value) {
   const el = await $(selector);
-  await el.waitForExist({ timeout: 10_000 });
+  await el.waitForDisplayed({ timeout: 10_000 });
+  await browser.execute((inputSelector) => {
+    const input = document.querySelector(inputSelector);
+    input?.scrollIntoView({ block: "center", inline: "nearest" });
+    input?.focus();
+  }, selector);
   await el.setValue(value);
 }
 
@@ -122,6 +127,71 @@ describe("FreeAce main window", () => {
   it("shows the Basic workspace after launch", async () => {
     await expect($("#basic-workspace")).toBeDisplayed();
     await expect($("#setup-wizard-overlay")).not.toBeDisplayed();
+  });
+
+  it("reviews, keeps and consumes a copied archive through the main-window backend", async () => {
+    const work = process.env.FREEACE_E2E_WORK;
+    const archive = path.join(work, "verified-consume.zip");
+    const keptOutput = path.join(work, "verified-kept-output");
+    const consumedOutput = path.join(work, "verified-consumed-output");
+    fs.copyFileSync(process.env.FREEACE_E2E_HELLO_ZIP, archive);
+    const original = fs.readFileSync(archive);
+    const run = (destination, keepArchive, dryRun) =>
+      browser.execute(
+        async (source, output, keep, reviewOnly) => {
+          const { invoke } = window.__TAURI_INTERNALS__;
+          const plan = await invoke("plan_in_place_extract", {
+            requestJson: JSON.stringify({
+              archive: source,
+              destination: output,
+              keepArchive: keep,
+            }),
+          });
+          if (reviewOnly) {
+            await invoke("discard_in_place_plan", { token: plan.token });
+            return plan.fits;
+          }
+          return (
+            (await invoke("run_in_place_extract", { token: plan.token }))
+              .paused === false
+          );
+        },
+        archive,
+        destination,
+        keepArchive,
+        dryRun,
+      );
+    assert.equal(await run(keptOutput, true, true), true);
+    assert.deepEqual(fs.readFileSync(archive), original);
+    assert.equal(fs.existsSync(keptOutput), false);
+    assert.equal(await run(keptOutput, true, false), true);
+    assert.deepEqual(fs.readFileSync(archive), original);
+    assert.equal(await run(consumedOutput, false, false), true);
+    assert.equal(fs.existsSync(archive), false);
+    for (const destination of [keptOutput, consumedOutput]) {
+      assert.equal(
+        fs.readFileSync(path.join(destination, "hello.txt"), "utf8"),
+        process.env.FREEACE_E2E_PAYLOAD,
+      );
+    }
+  });
+
+  it("reports an invalid disk image without registering a mount", async function () {
+    if (process.platform !== "win32") this.skip();
+    const image = path.join(process.env.FREEACE_E2E_WORK, "invalid.iso");
+    fs.writeFileSync(image, "invalid disk image");
+    const result = await browser.execute(async (file) => {
+      const { invoke } = window.__TAURI_INTERNALS__;
+      let failure;
+      try {
+        await invoke("mount_disk_image", { path: file });
+      } catch (error) {
+        failure = error;
+      }
+      return { failure, mounts: await invoke("list_disk_images") };
+    }, image);
+    assert.equal(result.failure?.stage, "verify");
+    assert.deepEqual(result.mounts, []);
   });
 
   it("opens and closes Settings", async () => {

@@ -93,17 +93,31 @@ describe("in-place extraction", () => {
   it("reports a safely paused run", async () => {
     vi.mocked(confirm).mockResolvedValue(true);
     vi.mocked(invoke)
-      .mockResolvedValueOnce(plan)
+      .mockResolvedValueOnce({ ...plan, resuming: true })
       .mockResolvedValueOnce({ paused: true });
     expect(await runInPlaceExtraction()).toBe("paused");
   });
 
   it("explains when archive reclamation cannot help the destination", () => {
-    expect(inPlaceReviewText({ ...plan, reclaims: false })).toContain(
-      "another filesystem",
-    );
-    expect(inPlaceReviewText({ ...plan, archiveKeptWhole: true })).toContain(
-      "until extraction finishes",
+    expect(
+      inPlaceReviewText({ ...plan, resuming: true, reclaims: false }),
+    ).toContain("another filesystem");
+    expect(
+      inPlaceReviewText({ ...plan, resuming: true, archiveKeptWhole: true }),
+    ).toContain("until extraction finishes");
+  });
+
+  it("keeps the source when mounting without opt-in consumption", async () => {
+    vi.mocked(confirm).mockResolvedValue(true);
+    expect(await runInPlaceExtraction(true, true)).toBe("done");
+    expect(invoke).toHaveBeenCalledWith("plan_in_place_extract", {
+      requestJson: expect.stringContaining(
+        '"keepArchive":true,"mountImage":true',
+      ),
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("Extract and keep this archive?"),
+      expect.anything(),
     );
   });
 

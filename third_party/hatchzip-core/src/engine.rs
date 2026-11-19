@@ -500,8 +500,8 @@ impl Job {
         } else {
             out_left
         };
-        let rise = match self.punch_support() {
-            Some(granule) if reclaims => {
+        let rise = match if reclaims { self.punch_support() } else { None } {
+            Some(granule) => {
                 let slack = match s.codec {
                     Codec::Stored => 0,
                     Codec::Deflate => out_left / 1024,
@@ -1091,7 +1091,11 @@ impl Run<'_> {
         let step = stream_step();
         // With the output on another disk, freeing the archive's space
         // doesn't help it, and the space check didn't count on it.
-        let mut punching = self.job.punch_support().filter(|_| reclaims);
+        let mut punching = if reclaims {
+            self.job.punch_support()
+        } else {
+            None
+        };
         let profile = match self.job.format.solid() {
             Some(s) => s.profile.clone(),
             None => bail!("the archive is not a compressed stream"),

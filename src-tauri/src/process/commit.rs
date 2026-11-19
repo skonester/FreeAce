@@ -450,15 +450,10 @@ fn copy_windows_times_and_attributes(
     target: &std::fs::File,
     directory: bool,
 ) -> Result<(), String> {
-    use std::os::windows::ffi::OsStrExt as _;
     use std::os::windows::fs::MetadataExt as _;
     use std::os::windows::io::AsRawHandle as _;
     use windows_sys::Win32::Foundation::{FILETIME, HANDLE};
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetFileTime, SetFileAttributesW, SetFileTime, FILE_ATTRIBUTE_ARCHIVE,
-        FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
-        FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{GetFileTime, SetFileTime};
 
     let mut created = FILETIME::default();
     let mut accessed = FILETIME::default();
@@ -497,6 +492,20 @@ fn copy_windows_times_and_attributes(
     let source_attributes = std::fs::symlink_metadata(source_path)
         .map_err(|error| error.to_string())?
         .file_attributes();
+    let _ = directory;
+    set_extracted_windows_attributes(target_path, source_attributes)
+}
+
+#[cfg(windows)]
+pub(crate) fn set_extracted_windows_attributes(
+    target_path: &std::path::Path,
+    source_attributes: u32,
+) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        SetFileAttributesW, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL,
+        FILE_ATTRIBUTE_NOT_CONTENT_INDEXED, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM,
+    };
     let allowed = FILE_ATTRIBUTE_READONLY
         | FILE_ATTRIBUTE_HIDDEN
         | FILE_ATTRIBUTE_SYSTEM
@@ -506,9 +515,6 @@ fn copy_windows_times_and_attributes(
     if target_attributes == 0 {
         target_attributes = FILE_ATTRIBUTE_NORMAL;
     }
-    // A directory's read-only bit is shell metadata rather than an access
-    // control. Preserve it anyway because Explorer and archive users observe it.
-    let _ = directory;
     let target_wide: Vec<u16> = target_path
         .as_os_str()
         .encode_wide()
@@ -520,6 +526,45 @@ fn copy_windows_times_and_attributes(
             target_path.display(),
             std::io::Error::last_os_error()
         ));
+    }
+    Ok(())
+}
+
+pub(crate) fn set_extracted_directory_time(
+    path: &std::path::Path,
+    modified: std::time::SystemTime,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    let directory = open_directory_for_metadata(path, true)?;
+    #[cfg(not(windows))]
+    let directory = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    directory
+        .set_times(std::fs::FileTimes::new().set_modified(modified))
+        .map_err(|error| {
+            format!(
+                "Could not preserve directory timestamp for {}: {error}",
+                path.display()
+            )
+        })
+}
+
+fn copy_directory_metadata(
+    source: &std::path::Path,
+    target: &std::path::Path,
+    preserve_archive_metadata: bool,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let _ = preserve_archive_metadata;
+        copy_windows_directory_metadata(source, target)?;
+    }
+    #[cfg(unix)]
+    if preserve_archive_metadata {
+        let metadata = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+        set_extracted_directory_time(
+            target,
+            metadata.modified().map_err(|error| error.to_string())?,
+        )?;
     }
     Ok(())
 }
@@ -560,6 +605,7 @@ fn copy_windows_directory_metadata(
 fn copy_tree_with_inherited_acl(
     source: &std::path::Path,
     target: &std::path::Path,
+    preserve_archive_metadata: bool,
 ) -> Result<(), String> {
     for entry in std::fs::read_dir(source).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -607,9 +653,8 @@ fn copy_tree_with_inherited_acl(
             #[cfg(unix)]
             crate::fs_secure::apply_parent_directory_mode(&target_child)
                 .map_err(|error| error.to_string())?;
-            copy_tree_with_inherited_acl(&source_child, &target_child)?;
-            #[cfg(windows)]
-            copy_windows_directory_metadata(&source_child, &target_child)?;
+            copy_tree_with_inherited_acl(&source_child, &target_child, preserve_archive_metadata)?;
+            copy_directory_metadata(&source_child, &target_child, preserve_archive_metadata)?;
         } else if metadata.is_file() {
             copy_file_no_replace(&source_child, &target_child)?;
         } else {
@@ -1349,11 +1394,12 @@ fn assert_staged_hardlinks_self_contained(
     Ok(())
 }
 
-pub(crate) fn plan_staged_contents(
+fn plan_extract_contents(
     staged: &std::path::Path,
     destination: &std::path::Path,
     reserved: &mut std::collections::HashSet<std::path::PathBuf>,
     plan: &mut Vec<MoveRecord>,
+    rename_conflicts: bool,
 ) -> Result<(), String> {
     for entry in std::fs::read_dir(staged).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -1366,7 +1412,13 @@ pub(crate) fn plan_staged_contents(
                     if target_meta.is_dir()
                         && !crate::path_safety::is_link_or_reparse(&target_meta) =>
                 {
-                    plan_staged_contents(&source, &requested_target, reserved, plan)?;
+                    plan_extract_contents(
+                        &source,
+                        &requested_target,
+                        reserved,
+                        plan,
+                        rename_conflicts,
+                    )?;
                     continue;
                 }
                 Ok(_) => {
@@ -1377,7 +1429,17 @@ pub(crate) fn plan_staged_contents(
                 Err(error) => return Err(error.to_string()),
             }
         }
-        let target = auto_rename_path(&requested_target, reserved)?;
+        let target = if rename_conflicts {
+            auto_rename_path(&requested_target, reserved)?
+        } else {
+            if path_entry_exists(&requested_target)? || reserved.contains(&requested_target) {
+                return Err(format!(
+                    "Extraction output already exists: {}",
+                    requested_target.display()
+                ));
+            }
+            requested_target
+        };
         reserved.insert(target.clone());
         plan.push(MoveRecord {
             source,
@@ -1698,6 +1760,7 @@ fn publish_target_local_copy<R: ExtractArtifactRecorder>(
     identity_log: &mut MoveIdentityLogWriter,
     plan: &mut [MoveRecord],
     index: usize,
+    preserve_archive_metadata: bool,
 ) -> Result<(), String> {
     let source = plan[index].source.clone();
     let target = plan[index].target.clone();
@@ -1742,9 +1805,11 @@ fn publish_target_local_copy<R: ExtractArtifactRecorder>(
                 }
             });
         }
-        let copied = copy_tree_with_inherited_acl(&source, &publish_temp);
-        #[cfg(windows)]
-        let copied = copied.and_then(|()| copy_windows_directory_metadata(&source, &publish_temp));
+        let copied =
+            copy_tree_with_inherited_acl(&source, &publish_temp, preserve_archive_metadata)
+                .and_then(|()| {
+                    copy_directory_metadata(&source, &publish_temp, preserve_archive_metadata)
+                });
         let result = copied.and_then(|()| sync_directory(&publish_temp));
         if let Err(error) = result {
             let cleanup = remove_path_if_matches(&publish_temp, &identity);
@@ -2261,6 +2326,7 @@ fn merge_staged_extract_recorded<R, F>(
     destination: &std::path::Path,
     expected_stage_identity: &FileIdentity,
     max_bytes: u64,
+    rename_conflicts: bool,
     recorder: &mut R,
     mark_committed: F,
 ) -> Result<Vec<std::path::PathBuf>, String>
@@ -2348,7 +2414,13 @@ where
     assert_real_directory(destination)?;
     let mut reserved = std::collections::HashSet::new();
     let mut plan = Vec::new();
-    plan_staged_contents(staged, destination, &mut reserved, &mut plan)?;
+    plan_extract_contents(
+        staged,
+        destination,
+        &mut reserved,
+        &mut plan,
+        rename_conflicts,
+    )?;
     prepare_planned_links(staged, destination, &plan)?;
     prepare_target_local_publish_paths(&mut plan, &mut reserved)?;
     // Install both recovery siblings with create-new semantics. Each identity is
@@ -2372,7 +2444,13 @@ where
                 ));
             }
             if plan[index].publish_temp.is_some() {
-                return publish_target_local_copy(recorder, &mut identity_log, &mut plan, index);
+                return publish_target_local_copy(
+                    recorder,
+                    &mut identity_log,
+                    &mut plan,
+                    index,
+                    !rename_conflicts,
+                );
             }
             let metadata = std::fs::symlink_metadata(&source).map_err(|e| e.to_string())?;
             if !crate::path_safety::is_link_or_reparse(&metadata) {
@@ -2523,6 +2601,7 @@ where
         destination,
         expected_stage_identity,
         max_bytes,
+        true,
         &mut recorder,
         mark_committed,
     )
@@ -2536,6 +2615,31 @@ pub(crate) fn merge_staged_extract(
 ) -> Result<Vec<std::path::PathBuf>, String> {
     let stage_identity = path_identity(staged)?;
     merge_staged_extract_with_commit(staged, destination, &stage_identity, max_bytes, || Ok(()))
+}
+
+pub(crate) fn commit_protected_extract(
+    app: &tauri::AppHandle,
+    plan: &CleanupPlan,
+) -> Result<(), String> {
+    let (stage, destination) = plan
+        .staged_extract
+        .as_ref()
+        .ok_or("Missing extraction stage")?;
+    let identity = plan
+        .stage_identity(stage)
+        .ok_or("Missing extraction stage identity")?;
+    let mut recorder = JournalExtractArtifactRecorder { app, plan };
+    merge_staged_extract_recorded(
+        stage,
+        destination,
+        identity,
+        plan.max_extract_bytes.unwrap_or(MAX_EXTRACTED_BYTES),
+        false,
+        &mut recorder,
+        || mark_extract_journal_committed(app, plan),
+    )?;
+    unregister_plan_stages_strict(plan)?;
+    Ok(())
 }
 
 pub(crate) fn commit_cleanup(app: &tauri::AppHandle, plan: &CleanupPlan) -> Result<(), String> {
@@ -2559,6 +2663,7 @@ pub(crate) fn commit_cleanup(app: &tauri::AppHandle, plan: &CleanupPlan) -> Resu
             destination,
             stage_identity,
             plan.max_extract_bytes.unwrap_or(MAX_EXTRACTED_BYTES),
+            true,
             &mut recorder,
             || mark_extract_journal_committed(app, plan),
         )

@@ -39,13 +39,19 @@ async function renderLicenses() {
   container.textContent = "Loading\u2026";
 
   try {
-    const [npmLicenses, cargoLicenses, sevenZipLicense, gleipnirLicense] =
-      await Promise.all([
-        loadLicenseFile("/licenses.json"),
-        loadLicenseFile("/licenses-cargo.json"),
-        loadTextFile("/7zip-license.txt"),
-        loadTextFile("/gleipnir-license.txt"),
-      ]);
+    const [
+      npmLicenses,
+      cargoLicenses,
+      sevenZipLicense,
+      gleipnirLicense,
+      dimLicense,
+    ] = await Promise.all([
+      loadLicenseFile("/licenses.json"),
+      loadLicenseFile("/licenses-cargo.json"),
+      loadTextFile("/7zip-license.txt"),
+      loadTextFile("/gleipnir-license.txt"),
+      loadTextFile("/dim-license.txt"),
+    ]);
     const data = { ...(npmLicenses ?? {}), ...(cargoLicenses ?? {}) };
     container.innerHTML = "";
 
@@ -84,6 +90,23 @@ async function renderLicenses() {
       gleipnirCard.querySelector(".license-card__body")?.appendChild(pre);
     }
     container.appendChild(gleipnirCard);
+
+    const dimCard = document.createElement("details");
+    dimCard.className = "license-card";
+    dimCard.innerHTML =
+      `<summary class="license-card__header">` +
+      `<strong>DIM</strong><span class="license-card__tag">MIT</span>` +
+      `</summary>` +
+      `<div class="license-card__body">` +
+      `<p>Disk Image Mounter by Glauber Lima, used for Windows optical image mounting.</p>` +
+      `</div>`;
+    if (dimLicense) {
+      const pre = document.createElement("pre");
+      pre.className = "license-card__text";
+      pre.textContent = dimLicense;
+      dimCard.querySelector(".license-card__body")?.appendChild(pre);
+    }
+    container.appendChild(dimCard);
 
     for (const [key, entry] of Object.entries(data)) {
       const card = document.createElement("details");

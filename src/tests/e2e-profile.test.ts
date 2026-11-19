@@ -41,7 +41,7 @@ describe("Windows E2E profile isolation", () => {
     });
   });
 
-  it("seeds settings and WebView2 dirs for a Windows profile", () => {
+  it("seeds settings, Documents and WebView2 dirs for a Windows profile", () => {
     const profile = createE2eProfile(undefined, "win32");
     createdProfiles.push(profile.profileDir);
     const home = path.join(profile.profileDir, "home");
@@ -60,5 +60,6 @@ describe("Windows E2E profile isolation", () => {
       true,
     );
     expect(fs.existsSync(paths.webview2)).toBe(true);
+    expect(fs.statSync(path.join(home, "Documents")).isDirectory()).toBe(true);
   });
 });

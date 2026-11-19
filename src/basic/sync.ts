@@ -153,13 +153,18 @@ export function syncBasicToPower(): void {
   onCompressionOptionChange();
 }
 
+function syncExtractToggles(toBasic: boolean): void {
+  for (const id of ["extract-in-place", "extract-mount-image"]) {
+    const basic = document.querySelector<HTMLInputElement>(`#basic-${id}`);
+    const power = document.querySelector<HTMLInputElement>(`#${id}`);
+    if (!basic || !power) continue;
+    if (toBasic) basic.checked = power.checked;
+    else power.checked = basic.checked;
+  }
+}
+
 export function syncBasicExtractToPower(): void {
-  const inPlace = document.querySelector<HTMLInputElement>(
-    "#basic-extract-in-place",
-  );
-  const powerInPlace =
-    document.querySelector<HTMLInputElement>("#extract-in-place");
-  if (inPlace && powerInPlace) powerInPlace.checked = inPlace.checked;
+  syncExtractToggles(false);
   const basicExtractPath = document.getElementById(
     "basic-extract-path",
   ) as HTMLInputElement | null;
@@ -262,12 +267,7 @@ export function setBasicBrowsePasswordVisible(visible: boolean): void {
 }
 
 export function syncPowerToBasicExtract(): void {
-  const inPlace = document.querySelector<HTMLInputElement>(
-    "#basic-extract-in-place",
-  );
-  const powerInPlace =
-    document.querySelector<HTMLInputElement>("#extract-in-place");
-  if (inPlace && powerInPlace) inPlace.checked = powerInPlace.checked;
+  syncExtractToggles(true);
   const basicExtractPath = document.getElementById(
     "basic-extract-path",
   ) as HTMLInputElement | null;

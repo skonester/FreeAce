@@ -567,6 +567,12 @@
           "markdownDescription": "Enables the is_packaged command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_disk_images command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-disk-images",
+          "markdownDescription": "Enables the list_disk_images command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_managed_temp_children command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-managed-temp-children",
@@ -583,6 +589,12 @@
           "type": "string",
           "const": "allow-mark-main-window-ready",
           "markdownDescription": "Enables the mark_main_window_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mount_disk_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mount-disk-image",
+          "markdownDescription": "Enables the mount_disk_image command without any pre-configured scope."
         },
         {
           "description": "Enables the open_debug_console_window command without any pre-configured scope.",
@@ -727,6 +739,12 @@
           "type": "string",
           "const": "allow-supports-workspace-window-fx",
           "markdownDescription": "Enables the supports_workspace_window_fx command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unmount_disk_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unmount-disk-image",
+          "markdownDescription": "Enables the unmount_disk_image command without any pre-configured scope."
         },
         {
           "description": "Enables the validate_archive_paths command without any pre-configured scope.",
@@ -915,6 +933,12 @@
           "markdownDescription": "Denies the is_packaged command without any pre-configured scope."
         },
         {
+          "description": "Denies the list_disk_images command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-disk-images",
+          "markdownDescription": "Denies the list_disk_images command without any pre-configured scope."
+        },
+        {
           "description": "Denies the list_managed_temp_children command without any pre-configured scope.",
           "type": "string",
           "const": "deny-list-managed-temp-children",
@@ -931,6 +955,12 @@
           "type": "string",
           "const": "deny-mark-main-window-ready",
           "markdownDescription": "Denies the mark_main_window_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mount_disk_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mount-disk-image",
+          "markdownDescription": "Denies the mount_disk_image command without any pre-configured scope."
         },
         {
           "description": "Denies the open_debug_console_window command without any pre-configured scope.",
@@ -1075,6 +1105,12 @@
           "type": "string",
           "const": "deny-supports-workspace-window-fx",
           "markdownDescription": "Denies the supports_workspace_window_fx command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unmount_disk_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unmount-disk-image",
+          "markdownDescription": "Denies the unmount_disk_image command without any pre-configured scope."
         },
         {
           "description": "Denies the validate_archive_paths command without any pre-configured scope.",

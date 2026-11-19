@@ -5,6 +5,7 @@ import { $, formatSize } from "../utils";
 import { setProgress, setStatus } from "../ui";
 import { boundedJson } from "./backend-ipc";
 import { setSevenZipRunInFlight, withLiveProgress } from "./runtime";
+import { reportMountedImage, type DiskImageMount } from "../disk-images";
 
 export interface InPlaceReview {
   token: string;
@@ -18,33 +19,48 @@ export interface InPlaceReview {
   archiveKeptWhole: boolean;
 }
 
-export function inPlaceReviewText(plan: InPlaceReview): string {
+export function inPlaceReviewText(
+  plan: InPlaceReview,
+  keepArchive = false,
+  mountImage = false,
+): string {
   const lines = [
     plan.resuming
       ? "Resume this in-place extraction?"
-      : "Extract and consume this archive?",
+      : keepArchive
+        ? "Extract and keep this archive?"
+        : "Extract and consume this archive?",
     `Free space: ${formatSize(plan.free)}`,
     `Space needed now: ${formatSize(plan.needed)} + ${formatSize(plan.keepFree)} kept free`,
-    `Ordinary extraction needs: ${formatSize(plan.normalNeeds)}`,
   ];
-  if (!plan.reclaims)
+  if (plan.resuming) {
+    if (!plan.reclaims)
+      lines.push(
+        "The destination is on another filesystem. Reclaiming archive space will not free space for the output.",
+      );
+    if (plan.archiveKeptWhole)
+      lines.push(
+        "This filesystem retains the compressed stream until extraction finishes.",
+      );
     lines.push(
-      "The destination is on another filesystem. Shrinking the archive will not free space for the output.",
+      "If interrupted, keep the output, .hatchzip journal and .hatchzip-tail file. Select the first volume and the same destination to resume.",
     );
-  if (plan.archiveKeptWhole)
+  } else if (!keepArchive) {
     lines.push(
-      "This filesystem cannot reclaim this compressed stream until extraction finishes.",
+      "The archive is deleted after FreeAce verifies and publishes the extraction.",
     );
-  lines.push(
-    "Archive bytes and split volumes are removed as verified output is saved. The archive is deleted when extraction finishes.",
-    "If interrupted, keep the output, .hatchzip journal and .hatchzip-tail file. Select the first volume and the same destination with this option enabled to resume.",
-  );
+  }
+  if (mountImage)
+    lines.push(
+      "FreeAce will mount the extracted disk image and report its drive letter.",
+    );
   return lines.join("\n\n");
 }
 
-export async function runInPlaceExtraction(): Promise<
-  "done" | "paused" | "cancelled"
-> {
+export async function runInPlaceExtraction(
+  keepArchive = false,
+  mountImage = false,
+): Promise<"done" | "paused" | "cancelled"> {
   if (state.inputs.length !== 1)
     throw new Error(
       "Select one archive or one volume of a split archive for in-place extraction.",
@@ -59,6 +75,8 @@ export async function runInPlaceExtraction(): Promise<
       archive,
       destination,
       password: $<HTMLInputElement>("extract-password").value || undefined,
+      keepArchive,
+      mountImage,
     },
     128 * 1024,
     "In-place extraction request",
@@ -71,26 +89,46 @@ export async function runInPlaceExtraction(): Promise<
     if (state.cancelRequested) return "cancelled";
     if (!plan.fits)
       throw new Error(
-        `This extraction needs ${formatSize(plan.needed + plan.keepFree)} free; ${formatSize(plan.free)} is available. Large solid 7z blocks may need room for the entire block before space can be reclaimed.`,
+        `This extraction needs ${formatSize(plan.needed + plan.keepFree)} free. ${formatSize(plan.free)} is available.`,
       );
-    const accepted = await confirm(inPlaceReviewText(plan), {
-      title: "In-place extraction",
-      kind: "warning",
-      okLabel: plan.resuming
-        ? "Resume extraction"
-        : "Extract and consume archive",
-      cancelLabel: "Cancel",
-    });
+    const accepted = await confirm(
+      inPlaceReviewText(plan, keepArchive, mountImage),
+      {
+        title: "In-place extraction",
+        kind: "warning",
+        okLabel: plan.resuming
+          ? "Resume extraction"
+          : keepArchive
+            ? "Extract"
+            : "Extract and consume archive",
+        cancelLabel: "Cancel",
+      },
+    );
     if (!accepted || state.cancelRequested) return "cancelled";
     setStatus("Extracting in place");
     return await withLiveProgress(async () => {
       setSevenZipRunInFlight(true);
       try {
-        const result = await invoke<{ paused: boolean }>(
-          "run_in_place_extract",
-          { token: plan.token },
-        );
-        return result.paused ? "paused" : "done";
+        const result = await invoke<{
+          paused: boolean;
+          mounted?: DiskImageMount | null;
+        }>("run_in_place_extract", { token: plan.token });
+        if (result.mounted) reportMountedImage(result.mounted);
+        return result.paused
+          ? plan.resuming
+            ? "paused"
+            : "cancelled"
+          : "done";
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "message" in error &&
+          typeof error.message === "string"
+        ) {
+          throw new Error(error.message);
+        }
+        throw error;
       } finally {
         setSevenZipRunInFlight(false);
       }

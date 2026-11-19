@@ -469,6 +469,7 @@ fn resumed_state(s: &StreamPoint, written: u64) -> Result<(State, Option<(Item, 
                 size: *size,
                 kind: Kind::File,
                 mode: *mode,
+                windows_attributes: None,
                 mtime: mtime.map(|s| UNIX_EPOCH + Duration::from_secs(s)),
             };
             let state = State::File {

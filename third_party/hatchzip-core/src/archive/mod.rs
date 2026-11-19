@@ -40,6 +40,7 @@ pub struct Item {
     pub size: u64,
     pub kind: Kind,
     pub mode: Option<u32>,
+    pub windows_attributes: Option<u32>,
     pub mtime: Option<SystemTime>,
 }
 

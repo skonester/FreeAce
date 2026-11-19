@@ -197,7 +197,7 @@ pub fn open_encrypted_noting(
 /// HatchZip never overwrites a file. That is also what lets a crashed run
 /// delete whatever sits at the paths of its uncommitted entries: before the
 /// run started, nothing did.
-fn check_collisions(job: &Job, out: &Path) -> Result<()> {
+pub fn check_collisions(job: &Job, out: &Path) -> Result<()> {
     if !out.exists() {
         return Ok(());
     }

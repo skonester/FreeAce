@@ -75,18 +75,23 @@ export async function runAction() {
 
   const mode = getMode();
 
-  const inPlace =
+  const consumeArchive =
     mode === "extract" &&
     !!document.querySelector<HTMLInputElement>("#extract-in-place")?.checked;
+  const mountImage =
+    mode === "extract" &&
+    !!document.querySelector<HTMLInputElement>("#extract-mount-image")?.checked;
+  const inPlace = consumeArchive || mountImage;
   if (mode === "extract" && state.inputs.length > 1 && !inPlace) {
     return runBatchExtract();
   }
 
   const isFreeace =
-    mode === "extract"
+    !inPlace &&
+    (mode === "extract"
       ? await isFreeaceArchive(state.inputs[0] ?? "")
       : (document.getElementById("format") as HTMLSelectElement | null)
-          ?.value === "freeace";
+          ?.value === "freeace");
   lastActionBackend = isFreeace && !inPlace ? "freeace" : "7z";
 
   state.batchCancelled = false;
@@ -94,12 +99,14 @@ export async function runAction() {
   setRunning(true);
   try {
     if (inPlace) {
-      const outcome = await runInPlaceExtraction();
+      const outcome = await runInPlaceExtraction(!consumeArchive, mountImage);
       hideProgress();
       if (outcome === "done") {
         setStatus("Done", 2000);
         showToast(
-          "In-place extraction complete. The archive was consumed.",
+          consumeArchive
+            ? "Extraction complete. The archive was consumed."
+            : "Extraction complete. The archive was kept.",
           "success",
         );
       } else if (outcome === "paused") {

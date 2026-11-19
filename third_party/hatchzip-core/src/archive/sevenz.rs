@@ -141,6 +141,7 @@ fn item(f: &ArchiveEntry) -> Result<Item> {
         size: f.size(),
         kind,
         mode,
+        windows_attributes: f.has_windows_attributes.then(|| f.windows_attributes()),
         mtime,
     })
 }

@@ -306,6 +306,7 @@ fn build_units(
                 size: m.size,
                 kind: Kind::File,
                 mode: (m.mode & 0o7777 != 0).then_some(m.mode & 0o7777),
+                windows_attributes: None,
                 mtime: Some(if m.mtime >= 0 {
                     UNIX_EPOCH + Duration::from_secs(m.mtime as u64)
                 } else {

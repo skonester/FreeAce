@@ -58,6 +58,7 @@ import {
 import { MAX_ARCHIVE_PATHS } from "./archive-rules";
 import { installE2eHookIfEnabled } from "./e2e-hook";
 import { installNativeWebviewContextMenuGuard } from "./webview-context-menu";
+import { initDiskImages } from "./disk-images";
 
 let persistentAlertDismissWired = false;
 let preservedRecoveryAcknowledgementAvailable = false;
@@ -246,6 +247,7 @@ export async function init() {
   } else if (platform === "linux") {
     document.body.classList.add("platform-linux");
   }
+  initDiskImages(platform);
   // Basic archive pickers need platform capability policy during their setup,
   // before the later version/package probes complete.
   state.platformName = platform;

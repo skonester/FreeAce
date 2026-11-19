@@ -391,7 +391,7 @@ pub fn first_volume(path: &Path) -> PathBuf {
     }
 }
 
-fn volume_set(path: &Path) -> Result<Vec<PathBuf>> {
+pub fn volume_set(path: &Path) -> Result<Vec<PathBuf>> {
     if let Some(rar) = rar_volume(path) {
         if rar.index != 0 {
             bail!(
@@ -420,6 +420,19 @@ fn volume_set(path: &Path) -> Result<Vec<PathBuf>> {
     loop {
         let next = numbered(&base, width, parts.len() as u64 + 1);
         if !next.exists() {
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            for entry in fs::read_dir(parent)? {
+                let entry = entry?;
+                if let Some((other_base, other_width, index)) = split_suffix(&entry.path())
+                    && other_base
+                        .as_os_str()
+                        .eq_ignore_ascii_case(base.as_os_str())
+                    && other_width == width
+                    && index > parts.len() as u64
+                {
+                    bail!("archive volume set has a gap at {}", next.display());
+                }
+            }
             return Ok(parts);
         }
         parts.push(next);

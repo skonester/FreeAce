@@ -154,6 +154,9 @@
           >
             Activity
           </button>
+          <button class="btn btn--ghost btn--sm" id="open-disk-images" hidden>
+            Disk images
+          </button>
           <button
             class="btn btn--ghost btn--icon"
             id="open-settings"
@@ -167,6 +170,31 @@
           </button>
         </div>
       </header>
+
+      <dialog
+        class="modal modal--disk-images"
+        id="disk-images"
+        aria-labelledby="disk-images-title"
+      >
+        <div class="modal__header">
+          <h2 id="disk-images-title">Disk images</h2>
+          <form method="dialog">
+            <button
+              class="btn btn--ghost btn--sm"
+              aria-label="Close disk images"
+            >
+              &times;
+            </button>
+          </form>
+        </div>
+        <div class="modal__main">
+          <button class="btn btn--sm" id="mount-disk-image" type="button">
+            Mount image
+          </button>
+          <p id="disk-images-status" role="status"></p>
+          <ul id="disk-images-list" class="disk-images-list"></ul>
+        </div>
+      </dialog>
 
       <div class="modal-overlay" id="settings-overlay" hidden>
         <div
@@ -1947,12 +1975,15 @@
                     Extract in place (consume archive)
                   </label>
                   <p class="basic-section-subtitle">
-                    Reclaim archive space as files are saved. ZIP, 7z, tar,
-                    tar.gz, FreeAce (including FreeAce .exe) and numbered split
-                    volumes. Space estimate shown before starting; large solid
-                    blocks need extra room. Keep recovery files to resume if
-                    interrupted.
+                    Review the space estimate before extracting. FreeAce removes
+                    the source after verifying the output.
                   </p>
+                </div>
+                <div class="basic-field" data-disk-images-only hidden>
+                  <label for="basic-extract-mount-image">
+                    <input type="checkbox" id="basic-extract-mount-image" />
+                    Mount the extracted disk image
+                  </label>
                 </div>
               </div>
             </div>
@@ -2492,12 +2523,15 @@
                     Extract in place (consume archive)
                   </label>
                   <p>
-                    Reclaim archive space as files are saved. ZIP, 7z, tar,
-                    tar.gz, FreeAce (including FreeAce .exe) and numbered split
-                    volumes. Review the space estimate before starting.
-                    Interrupted extractions can be resumed with their recovery
-                    files.
+                    Review the space estimate before extracting. FreeAce removes
+                    the source after verifying the output.
                   </p>
+                </div>
+                <div class="field" data-disk-images-only hidden>
+                  <label for="extract-mount-image">
+                    <input type="checkbox" id="extract-mount-image" />
+                    Mount the extracted disk image
+                  </label>
                 </div>
                 <details class="session-details">
                   <summary>Security and arguments</summary>

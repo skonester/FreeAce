@@ -141,6 +141,7 @@ pub(super) fn describe<R: Read>(
             size,
             kind,
             mode,
+            windows_attributes: None,
             mtime,
         },
         target,

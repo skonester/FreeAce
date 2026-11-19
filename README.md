@@ -57,12 +57,10 @@ https://github.com/ValisSowilo/Gleipnir
 
 
 
-FreeAce also offers opt-in **Extract in place (consume archive)** for ZIP, 7z,
-tar, tar.gz and numbered split archives. Archive space is reclaimed as verified
-output is saved, with a space estimate before starting and recovery after an
-interruption. Large solid blocks still need working room. See
-[in-place extraction](docs/IN-PLACE-EXTRACTION.md) for usage and `.freeace` format
-feasibility.
+**Extract in place (consume archive)** verifies and publishes the output before
+removing the source. On Windows, **Disk images** mounts read-only optical media
+directly in FreeAce, including images extracted from an archive. See
+[in-place extraction and disk images](docs/IN-PLACE-EXTRACTION.md).
 
 ## System requirements
 

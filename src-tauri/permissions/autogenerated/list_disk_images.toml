@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-disk-images"
+description = "Enables the list_disk_images command without any pre-configured scope."
+commands.allow = ["list_disk_images"]
+
+[[permission]]
+identifier = "deny-list-disk-images"
+description = "Denies the list_disk_images command without any pre-configured scope."
+commands.deny = ["list_disk_images"]

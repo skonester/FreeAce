@@ -546,7 +546,7 @@ async function handleBasicExtractActionOnce(
   // A consumed archive is parsed through its saved index by the in-place
   // engine. Ordinary 7-Zip probing cannot read that recovery view.
   const inPlace = !!document.querySelector<HTMLInputElement>(
-    "#basic-extract-in-place",
+    "#basic-extract-in-place:checked, #basic-extract-mount-image:checked",
   )?.checked;
   const encryptionCheck = inPlace ? false : await isArchiveEncrypted(archive);
   if (!isBasicPreparationCurrent(preparation)) return;

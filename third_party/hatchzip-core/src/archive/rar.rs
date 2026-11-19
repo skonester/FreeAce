@@ -201,6 +201,7 @@ impl File {
             size: if self.dir { 0 } else { self.size },
             kind: if self.dir { Kind::Dir } else { Kind::File },
             mode: self.mode,
+            windows_attributes: None,
             mtime: self.mtime,
         })
     }

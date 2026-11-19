@@ -1,6 +1,20 @@
 
 FreeAce! A cross platform 7Z gui frontend built on Tauri V2!
 
+## Changes in `v0.6.5:`
+
+### 2026-11-19 (11/19/26): Verified archive extraction and Windows disk images
+
+- Basic and Power can review disk space before extraction. The consume option
+  retires the source and numbered split volumes after FreeAce verifies and
+  publishes the output. Existing interrupted jobs can resume from their journals.
+- Windows can mount supported optical images read-only through the new
+  **Disk images** dialog or `freeace.exe --mount-image <path>`. FreeAce reports
+  the drive letter and detaches its mounts when it exits.
+- Enable **Mount the extracted disk image** to mount an image after extraction.
+  When consumption is enabled, FreeAce waits for the mount before retiring the
+  archive.
+
 ## Changes in `v0.6.4:`
 
 ### 2026-10-25 (10/25/26): Self-extracting archives, FreeAce in-place extraction, 0.6.4

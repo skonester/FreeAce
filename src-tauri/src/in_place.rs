@@ -22,6 +22,10 @@ use tauri::{Emitter, Manager};
 
 use crate::process::{self, RunningProcess};
 
+mod transaction;
+#[cfg(all(test, windows))]
+pub(crate) use transaction::extract as extract_verified_for_test;
+
 const KEEP_FREE: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Deserialize)]
@@ -30,6 +34,10 @@ pub struct Request {
     archive: PathBuf,
     destination: PathBuf,
     password: Option<String>,
+    #[serde(default)]
+    keep_archive: bool,
+    #[serde(default)]
+    mount_image: bool,
 }
 
 #[derive(Serialize)]
@@ -66,13 +74,13 @@ pub struct InPlacePlans(Mutex<Option<Pending>>);
 
 /// Keep the existing operation slot and close/quit protection until the
 /// blocking worker has stopped, including when the invoking window goes away.
-struct Slot {
+pub(crate) struct Slot {
     app: tauri::AppHandle,
-    stop: Arc<AtomicBool>,
+    pub(crate) stop: Arc<AtomicBool>,
 }
 
 impl Slot {
-    fn claim(app: tauri::AppHandle, owner: &str) -> Result<Self, String> {
+    pub(crate) fn claim(app: tauri::AppHandle, owner: &str) -> Result<Self, String> {
         let stop = Arc::new(AtomicBool::new(false));
         {
             let state = app.state::<RunningProcess>();
@@ -92,7 +100,7 @@ impl Drop for Slot {
     }
 }
 
-fn plain_path(path: &Path) -> Result<(), String> {
+pub(crate) fn plain_path(path: &Path) -> Result<(), String> {
     if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err("Choose an absolute path without parent-directory components.".into());
     }
@@ -188,15 +196,34 @@ fn scrub_freeace(app: &tauri::AppHandle, archive: &Path) -> Result<(), String> {
     ))
 }
 
+#[cfg(test)]
 fn open(request: &Request, writable: bool) -> Result<(State, Paths), String> {
+    open_request(request, writable, true)
+}
+
+fn open_request(request: &Request, writable: bool, legacy: bool) -> Result<(State, Paths), String> {
     plain_path(&request.archive)?;
     plain_path(&request.destination)?;
     let (primary, paths) = session::locate(&request.archive).map_err(|e| format!("{e:#}"))?;
     plain_path(&primary)?;
-    if primary.starts_with(&request.destination) || request.destination.parent().is_none() {
-        return Err("Choose a destination folder that does not contain the source archive.".into());
+    if request.destination.parent().is_none()
+        || ((legacy || paths.exists()) && primary.starts_with(&request.destination))
+    {
+        return Err("Choose a destination folder with a parent directory.".into());
     }
     validate_journal(&primary, &paths, &request.destination)?;
+    if !paths.exists() {
+        crate::path_safety::assert_real_directory(request.destination.parent().unwrap())?;
+        crate::path_safety::assert_real_file(&request.archive)?;
+        for part in
+            hatchzip_core::archive::storage::volume_set(&primary).map_err(|e| format!("{e:#}"))?
+        {
+            plain_path(&part)?;
+            crate::path_safety::assert_real_file(&part)?;
+        }
+    } else if request.keep_archive || request.mount_image {
+        return Err("Resume the interrupted extraction with Consume archive enabled and automatic mounting disabled.".into());
+    }
     let state = session::open(
         &primary,
         &paths,
@@ -232,12 +259,17 @@ fn open(request: &Request, writable: bool) -> Result<(State, Paths), String> {
             part.push(".hatchzip-part");
             let part = PathBuf::from(part);
             plain_path(&part)?;
-            if matches!(state, State::Fresh(..)) && part.exists() {
+            if legacy && matches!(state, State::Fresh(..)) && part.exists() {
                 return Err(format!("{} already exists. Choose another destination or move the file before extracting.", part.display()));
             }
         }
-        if let Some(reason) = job.in_place_refusal() {
-            return Err(reason);
+        if !legacy && matches!(state, State::Fresh(..)) {
+            session::check_collisions(job, &request.destination).map_err(|e| format!("{e:#}"))?;
+        }
+        if legacy || matches!(state, State::Resume(..)) {
+            if let Some(reason) = job.in_place_refusal() {
+                return Err(reason);
+            }
         }
         job.check_password().map_err(|e| format!("{e:#}"))?;
     }
@@ -257,7 +289,7 @@ fn stamps(state: &State, paths: &Paths) -> Result<Vec<Stamp>, String> {
         .map(|(path, hash)| {
             let present = path.try_exists().map_err(|e| e.to_string())?;
             let identity = if present {
-                Some(process::archive_identity_token_from_open_file(
+                Some(process::archive_member_stamp(
                     &path,
                     &crate::path_safety::open_regular_file_nofollow(&path)
                         .map_err(|e| e.to_string())?,
@@ -279,6 +311,19 @@ fn stamps(state: &State, paths: &Paths) -> Result<Vec<Stamp>, String> {
         .collect()
 }
 
+fn protected_plan(job: &engine::Job, output: &Path) -> Result<(u64, u64, u64), String> {
+    // Fresh operations never probe archive reclamation during review.
+    let free = process::available_space_for_path(output)?;
+    let (normal_needs, _) = job.space_needed(true, false);
+    let mut needed = normal_needs;
+    if output.try_exists().map_err(|e| e.to_string())? {
+        // FreeAce's merge publishes via a target-local copy to inherit the
+        // destination ACL. Allow room for that copy while staging still exists.
+        needed = needed.saturating_add(job.remaining_size());
+    }
+    Ok((free, needed, normal_needs))
+}
+
 #[tauri::command]
 pub async fn plan_in_place_extract(
     app: tauri::AppHandle,
@@ -289,25 +334,39 @@ pub async fn plan_in_place_extract(
         return Err("Extraction request is too large.".into());
     }
     let request: Request = serde_json::from_str(&request_json).map_err(|e| e.to_string())?;
+    if request.mount_image {
+        crate::disk_image::supported().map_err(|error| error.to_string())?;
+    }
     let owner = window.label().to_owned();
     let slot = Slot::claim(app.clone(), &owner)?;
     configure_freeace_decoder(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let _slot = slot;
-        let (state, paths) = open(&request, false)?;
+        let (state, paths) = open_request(&request, false, false)?;
         let resuming = !matches!(state, State::Fresh(..));
         if let State::Fresh(job, _) = &state {
             if job.format_name == hatchzip_core::archive::freeace::NAME {
                 scrub_freeace(&app, job.storage.primary())?;
             }
         }
-        let plan = match &state {
-            State::Fresh(job, out) => Some(session::plan(job, out, false, KEEP_FREE, false)),
-            State::Resume(job, j) => Some(session::plan(job, &j.output, true, KEEP_FREE, false)),
-            State::Orphan(_) => None,
-        }
-        .transpose()
-        .map_err(|e| format!("{e:#}"))?;
+        let (free, needed, normal_needs, reclaims, archive_kept_whole) = match &state {
+            State::Fresh(job, out) => {
+                let (free, needed, normal) = protected_plan(job, out)?;
+                (free, needed, normal, false, true)
+            }
+            State::Resume(job, journal) => {
+                let plan = session::plan(job, &journal.output, true, KEEP_FREE, false)
+                    .map_err(|e| format!("{e:#}"))?;
+                (
+                    plan.free,
+                    plan.needed,
+                    plan.normal_needs,
+                    plan.reclaims,
+                    plan.archive_kept_whole,
+                )
+            }
+            State::Orphan(_) => (0, 0, 0, true, false),
+        };
         let mut random = [0u8; 24];
         getrandom::fill(&mut random).map_err(|e| e.to_string())?;
         let token = random
@@ -316,14 +375,14 @@ pub async fn plan_in_place_extract(
             .collect::<String>();
         let review = Review {
             token: token.clone(),
-            free: plan.as_ref().map_or(0, |p| p.free),
-            needed: plan.as_ref().map_or(0, |p| p.needed),
-            normal_needs: plan.as_ref().map_or(0, |p| p.normal_needs),
+            free,
+            needed,
+            normal_needs,
             keep_free: KEEP_FREE,
-            fits: plan.as_ref().is_none_or(|p| p.fits),
-            reclaims: plan.as_ref().is_none_or(|p| p.reclaims),
+            fits: matches!(state, State::Orphan(_)) || free >= needed.saturating_add(KEEP_FREE),
+            reclaims,
             resuming,
-            archive_kept_whole: plan.as_ref().is_some_and(|p| p.archive_kept_whole),
+            archive_kept_whole,
         };
         if _slot.stop.load(Ordering::Relaxed) {
             return Err("Planning cancelled. The archive was not modified.".into());
@@ -366,6 +425,40 @@ pub fn discard_in_place_plan(
 #[serde(rename_all = "camelCase")]
 pub struct ResultInfo {
     paused: bool,
+    mounted: Option<crate::disk_image::MountInfo>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractionError {
+    stage: &'static str,
+    message: String,
+    output_published: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mount_error: Option<crate::disk_image::MountError>,
+}
+
+impl ExtractionError {
+    fn new(stage: &'static str, message: String, output_published: bool) -> Self {
+        Self {
+            stage,
+            message,
+            output_published: Some(output_published),
+            mount_error: None,
+        }
+    }
+}
+
+impl From<String> for ExtractionError {
+    fn from(message: String) -> Self {
+        Self::new("extract", message, false)
+    }
+}
+
+impl From<&str> for ExtractionError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
 }
 
 #[tauri::command]
@@ -373,8 +466,9 @@ pub async fn run_in_place_extract(
     app: tauri::AppHandle,
     window: tauri::Window,
     token: String,
-) -> Result<ResultInfo, String> {
+) -> Result<ResultInfo, ExtractionError> {
     let slot = Slot::claim(app.clone(), window.label())?;
+    process::wait_for_startup_recovery().await?;
     configure_freeace_decoder(&app)?;
     let pending = {
         let state = app.state::<InPlacePlans>();
@@ -392,21 +486,32 @@ pub async fn run_in_place_extract(
         let slot = slot;
         // Recheck the read-only view before a writable resume can reconcile
         // a committed truncation left by an interrupted run.
-        let (view, paths) = open(&pending.request, false)?;
+        let (view, paths) = open_request(&pending.request, false, false)?;
         if stamps(&view, &paths)? != pending.stamps {
             return Err("The archive or recovery files changed after the estimate. Review the extraction again.".into());
         }
-        drop(view);
-        if slot.stop.load(Ordering::Relaxed) { return Ok(ResultInfo { paused: true }); }
-        let (state, paths) = open(&pending.request, true)?;
-        let paused = execute(state, paths, &slot.stop, move |percent| {
+        let progress = move |percent| {
             let _ = window.emit("7z-progress-structured", serde_json::json!({"percent": percent}));
-        })?;
-        if !paused {
+        };
+        let result = if slot.stop.load(Ordering::Relaxed) {
+            ResultInfo { paused: true, mounted: None }
+        } else if let State::Fresh(job, _) = view {
+            let result = transaction::execute(&slot.app, &pending, job, paths, &slot.stop, progress);
+            if let Err(error) = &result {
+                eprintln!("Verified extraction {}: {}", error.stage, error.message);
+            }
+            result?
+        } else {
+            drop(view);
+            let (state, paths) = open_request(&pending.request, true, true)?;
+            let paused = execute(state, paths, &slot.stop, progress)?;
+            ResultInfo { paused, mounted: None }
+        };
+        if !result.paused {
             crate::launch::remember_openable_directory(&slot.app, &pending.request.destination);
         }
-        Ok(ResultInfo { paused })
-    }).await.map_err(|e| e.to_string())?
+        Ok(result)
+    }).await.map_err(|e| ExtractionError::new("worker", e.to_string(), false))?
 }
 
 fn execute(
@@ -442,6 +547,16 @@ fn execute(
             return Ok(false);
         }
     };
+    run_job(job, journal, paths, stop, progress).map_err(|e| format!("{e}\n\nKeep the extracted files, .hatchzip journal and .hatchzip-tail file together. Select the first archive volume and the same destination with in-place extraction enabled to resume."))
+}
+
+fn run_job(
+    job: engine::Job,
+    journal: Journal,
+    paths: Paths,
+    stop: &AtomicBool,
+    progress: impl Fn(f64) + Sync + 'static,
+) -> Result<bool, String> {
     let total = journal.total_size.max(1);
     let done = AtomicU64::new(journal.total_size.saturating_sub(job.remaining_size()));
     let last = AtomicU64::new(u64::MAX);
@@ -464,7 +579,9 @@ fn execute(
             on_commit: Box::new(|_| {}),
         },
     };
-    run.execute().map(|o| matches!(o, Outcome::Paused)).map_err(|e| format!("{e:#}\n\nKeep the extracted files, .hatchzip journal and .hatchzip-tail file together. Select the first archive volume and the same destination with in-place extraction enabled to resume."))
+    run.execute()
+        .map(|o| matches!(o, Outcome::Paused))
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[cfg(test)]
@@ -493,6 +610,8 @@ mod tests {
             archive,
             destination: dir.join("output"),
             password: None,
+            keep_archive: false,
+            mount_image: false,
         }
     }
 
@@ -609,6 +728,8 @@ mod tests {
                 archive: dir.join(format!("{name}.002")),
                 destination: dir.join("output"),
                 password: None,
+                keep_archive: false,
+                mount_image: false,
             };
             let (state, paths) = open(&request, true).unwrap();
             assert!(!execute(state, paths, &AtomicBool::new(false), |_| {}).unwrap());
@@ -702,6 +823,8 @@ mod tests {
             archive,
             destination: dir.join("output"),
             password: None,
+            keep_archive: false,
+            mount_image: false,
         }
     }
 
@@ -822,6 +945,8 @@ mod tests {
             archive,
             destination: dir.join("output"),
             password: None,
+            keep_archive: false,
+            mount_image: false,
         }
     }
 
@@ -993,6 +1118,8 @@ mod tests {
             archive: archive.clone(),
             destination: dir.join("output"),
             password: None,
+            keep_archive: false,
+            mount_image: false,
         };
         let error = open(&request, true).err().expect("7z SFX must be refused");
         assert!(error.contains("self-extracting 7z"), "{error}");

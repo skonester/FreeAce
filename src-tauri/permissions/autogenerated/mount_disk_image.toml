@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mount-disk-image"
+description = "Enables the mount_disk_image command without any pre-configured scope."
+commands.allow = ["mount_disk_image"]
+
+[[permission]]
+identifier = "deny-mount-disk-image"
+description = "Denies the mount_disk_image command without any pre-configured scope."
+commands.deny = ["mount_disk_image"]

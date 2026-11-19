@@ -13,10 +13,21 @@ mod quota;
 mod recovery;
 mod staging;
 
-#[cfg(windows)]
 pub(crate) use commit::rename_file_no_replace;
 #[cfg(windows)]
+pub(crate) use commit::set_extracted_windows_attributes;
+pub(crate) use commit::{
+    commit_protected_extract, rollback_cleanup as rollback_protected_extract,
+    set_extracted_directory_time, validate_staged_tree, MAX_EXTRACTED_BYTES,
+};
+pub(crate) use journal::{
+    clear_cleanup_journal, remove_directory_if_matches, write_cleanup_journal,
+};
+#[cfg(windows)]
 pub(crate) use journal::{file_identities_match, file_identity};
+pub(crate) use journal::{path_identity, remove_regular_file_if_matches};
+pub(crate) use recovery::wait_for_startup_recovery;
+pub(crate) use staging::next_extract_stage_path;
 
 #[cfg(test)]
 mod tests;
@@ -64,6 +75,7 @@ pub use recovery::{
 #[cfg(test)]
 pub(crate) use archive_snapshot::archive_identity_token;
 pub(crate) use archive_snapshot::archive_identity_token_from_open_file;
+pub(crate) use archive_snapshot::archive_member_stamp;
 #[cfg(windows)]
 pub(crate) use archive_snapshot::copy_windows_zone_identifier;
 pub(crate) use journal::unregister_pending_stage;
@@ -90,7 +102,7 @@ pub(crate) use commit::{
     archive_backup_path, archive_stage_has_recovery_backups, assert_safe_extract_target_ancestors,
     commit_failure_should_scrub_staging, merge_staged_extract, merge_staged_extract_with_commit,
     promote_archive_family, rollback_cleanup, rollback_persisted_move_plan, validate_move_record,
-    write_move_plan, MAX_EXTRACTED_BYTES,
+    write_move_plan,
 };
 #[cfg(test)]
 pub(crate) use journal::{

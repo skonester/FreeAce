@@ -110,6 +110,7 @@ export function createE2eProfile(
   let windowsPaths = null;
   if (platform === "win32") {
     windowsPaths = windowsProfilePaths(home);
+    fs.mkdirSync(path.join(home, "Documents"), { recursive: true });
     fs.mkdirSync(windowsPaths.webview2, { recursive: true });
     seedE2eSettings(windowsPaths.settingsLocal);
   }

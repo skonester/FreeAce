@@ -88,7 +88,8 @@ describe("licenses modal", () => {
     expect(
       list.querySelector('a[href="https://spdx.org/licenses/Apache-2.0.html"]'),
     ).not.toBeNull();
-    expect(list.querySelectorAll("details.license-card").length).toBe(5);
+    expect(list.textContent).toContain("DIM");
+    expect(list.querySelectorAll("details.license-card").length).toBe(6);
 
     closeLicensesModal();
     expect(document.activeElement).toBe(trigger);

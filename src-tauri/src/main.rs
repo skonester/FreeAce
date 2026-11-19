@@ -2,6 +2,7 @@
 
 mod app_menu;
 mod archive_detect;
+mod disk_image;
 #[cfg(target_os = "macos")]
 mod finder_sync_requests;
 mod fs_secure;
@@ -223,7 +224,7 @@ fn main() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         if production_integrations_enabled() {
-            builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _| {
+            builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
                 // Invalidate extract warm-idle before the deferred main-thread
                 // dispatch so an in-flight idle-exit cannot destroy the window
                 // that this second-instance open is about to reuse.
@@ -234,7 +235,7 @@ fn main() {
                 std::thread::spawn(move || {
                     let callback_handle = dispatch_handle.clone();
                     let _ = dispatch_handle.run_on_main_thread(move || {
-                        emit_open_paths(&callback_handle, argv);
+                        emit_open_paths(&callback_handle, argv, &cwd);
                     });
                 });
             }));
@@ -254,6 +255,7 @@ fn main() {
         .manage(RunningProcess::new())
         .manage(process::RunningFreeace::new())
         .manage(in_place::InPlacePlans::default())
+        .manage(disk_image::Mounts::default())
         .setup(move |app| {
             // Primary instance only reaches setup. Resolve shell handoffs here
             // (and in emit_open_paths); collect_cli_context must not consume them
@@ -382,6 +384,9 @@ fn main() {
             in_place::plan_in_place_extract,
             in_place::run_in_place_extract,
             in_place::discard_in_place_plan,
+            disk_image::mount_disk_image,
+            disk_image::list_disk_images,
+            disk_image::unmount_disk_image,
             process::run_7z,
             process::cancel_7z,
             process::is_7z_running,
@@ -516,6 +521,9 @@ fn main() {
 
     #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     app.run(|app_handle, event| {
+        if matches!(&event, tauri::RunEvent::Exit) {
+            disk_image::shutdown(app_handle);
+        }
         if let tauri::RunEvent::ExitRequested { api, .. } = &event {
             if defer_exit_while_operation_finishes(app_handle, api) {
                 return;

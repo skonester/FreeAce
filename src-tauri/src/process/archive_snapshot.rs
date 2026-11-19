@@ -218,6 +218,19 @@ pub(crate) fn archive_identity_token_from_open_file(
     archive_identity_token_from_family(resolved, Some(file))
 }
 
+pub(crate) fn archive_member_stamp(
+    path: &std::path::Path,
+    file: &std::fs::File,
+) -> Result<String, String> {
+    use sha2::Digest;
+    let mut digest = sha2::Sha256::new();
+    hash_archive_file_identity(
+        &mut digest,
+        &archive_file_identity_from_open_file(path, file)?,
+    );
+    Ok(format!("{:x}", digest.finalize()))
+}
+
 pub(crate) fn archive_identity_token(path: &std::path::Path) -> Result<String, String> {
     let resolved = crate::path_safety::resolve_regular_file_input(path)?;
     archive_identity_token_from_family(&resolved, None)

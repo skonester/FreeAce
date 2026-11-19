@@ -92,6 +92,7 @@ pub fn open(
                 size: e.size(),
                 kind,
                 mode: e.unix_mode(),
+                windows_attributes: Some(e.external_attributes() & 0xff),
                 mtime: e.last_modified().and_then(fsutil::zip_time),
             }],
             encrypted: e.encrypted(),

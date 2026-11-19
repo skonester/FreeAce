@@ -140,7 +140,7 @@ pub(crate) fn enqueue_pending_batch(
 }
 
 pub(crate) fn should_use_extract_window(paths: &[String], mode: &str) -> bool {
-    if mode == "compress" {
+    if matches!(mode, "compress" | "mount-image") {
         return false;
     }
     if mode == "extract-explicit" && paths.len() == 1 {
@@ -405,6 +405,11 @@ where
             continue;
         }
 
+        if arg == "--mount-image" {
+            mode = "mount-image".to_string();
+            continue;
+        }
+
         if arg == "--freeace-shell-handoff" {
             let Some(handoff) = args.next() else {
                 eprintln!("Ignoring Windows shell handoff without a file path.");
@@ -441,7 +446,7 @@ where
         paths.push(path);
     }
 
-    if mode == "compress" {
+    if matches!(mode.as_str(), "compress" | "mount-image") {
         return (paths, mode);
     }
 
@@ -580,9 +585,10 @@ pub fn emit_open_urls(app: &tauri::AppHandle, urls: Vec<Url>) {
     let _ = route_open_request(app, paths, String::new());
 }
 
-pub fn emit_open_paths(app: &tauri::AppHandle, argv: Vec<String>) -> bool {
+pub fn emit_open_paths(app: &tauri::AppHandle, argv: Vec<String>, cwd: &str) -> bool {
     // Primary (or sole) instance: consume Windows shell handoffs now.
-    let (paths, mode) = parse_open_request_args(argv.into_iter().skip(1));
+    let context = parse_open_request_args(argv.into_iter().skip(1));
+    let (paths, mode) = resolve_mount_paths(context, std::path::Path::new(cwd));
     emit_pending_shell_handoff_error(app);
     route_open_request(app, paths, mode)
 }
@@ -599,12 +605,34 @@ fn cli_args_lossy() -> impl Iterator<Item = String> {
 pub fn collect_cli_context() -> (Vec<String>, String) {
     // Do not consume shell handoffs here. A secondary single-instance process
     // would delete the file before the primary receives forwarded argv.
-    parse_open_request_args_ex(cli_args_lossy(), false)
+    collect_context(false)
 }
 
 /// Resolve launch argv including Windows shell handoffs. Call only from the
 /// primary instance (app setup / open routing), never from a process that may
 /// exit as a single-instance secondary.
 pub fn resolve_cli_context_with_handoffs() -> (Vec<String>, String) {
-    parse_open_request_args_ex(cli_args_lossy(), true)
+    collect_context(true)
+}
+
+fn collect_context(consume_handoff: bool) -> (Vec<String>, String) {
+    let context = parse_open_request_args_ex(cli_args_lossy(), consume_handoff);
+    match std::env::current_dir() {
+        Ok(cwd) => resolve_mount_paths(context, &cwd),
+        Err(_) => context,
+    }
+}
+
+fn resolve_mount_paths(
+    (mut paths, mode): (Vec<String>, String),
+    cwd: &std::path::Path,
+) -> (Vec<String>, String) {
+    if mode == "mount-image" {
+        for path in &mut paths {
+            if std::path::Path::new(path).is_relative() {
+                *path = cwd.join(&*path).to_string_lossy().into_owned();
+            }
+        }
+    }
+    (paths, mode)
 }

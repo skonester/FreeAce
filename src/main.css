@@ -8,3 +8,31 @@
 @import "./styles/main-mid.css";
 @import "./styles/platform.css";
 @import "./styles/titlebar.css";
+dialog.modal--disk-images {
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  color: inherit;
+}
+
+dialog.modal--disk-images:not([open]) {
+  display: none;
+}
+
+dialog.modal--disk-images::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.disk-images-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.disk-images-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  overflow-wrap: anywhere;
+}

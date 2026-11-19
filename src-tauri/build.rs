@@ -423,6 +423,9 @@ fn main() {
     prepare_7z_binaries();
     const COMMANDS: &[&str] = &[
         "plan_in_place_extract",
+        "mount_disk_image",
+        "list_disk_images",
+        "unmount_disk_image",
         "run_in_place_extract",
         "discard_in_place_plan",
         "run_7z",
