@@ -17,8 +17,19 @@ GPL-3.0-or-later.
 - **7-Zip** uses LGPL with BSD 3-clause, BSD 2-clause and unRAR portions.
   See `assets/7ZIP_LICENSE_*.txt`.
 - **Gleipnir** uses GPL-3.0-or-later. See `third_party/gleipnir/LICENSE.md`.
+- **freeace-unarc**, the separate FreeArc decoder executable, is derived from
+  go-unarc under GPL-2.0. Its source and license are in `third_party/freeace-unarc`.
 - **DIM** (Glauber Lima) is used for Windows disk-image mounting under the
   [MIT license](third_party/dim/LICENSE).
 
 Per-dependency licenses for npm and Cargo packages are viewable in-app via
 Settings › App › View Open-Source Licenses.
+
+## Logo
+
+The FreeAce logo, Rosie the Cat, is adapted from the
+[GNU IceCat logo](https://commons.wikimedia.org/wiki/File:Icecat.png) by
+Hitflip. The original artwork is offered under a choice of MPL-1.1,
+GPL-2.0-or-later or LGPL-2.1-or-later. FreeAce uses it under GPL-2.0-or-later,
+and the adapted logo is distributed under GPL-3.0-or-later with the rest of
+FreeAce.

@@ -89,7 +89,9 @@ describe("licenses modal", () => {
       list.querySelector('a[href="https://spdx.org/licenses/Apache-2.0.html"]'),
     ).not.toBeNull();
     expect(list.textContent).toContain("DIM");
-    expect(list.querySelectorAll("details.license-card").length).toBe(6);
+    expect(list.textContent).toContain("freeace-unarc");
+    expect(list.textContent).toContain("FreeAce logo");
+    expect(list.querySelectorAll("details.license-card").length).toBe(8);
 
     closeLicensesModal();
     expect(document.activeElement).toBe(trigger);

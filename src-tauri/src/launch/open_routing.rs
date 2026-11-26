@@ -164,7 +164,7 @@ pub(crate) fn should_queue_extract_to_main(
 
 pub(crate) fn looks_like_archive_extension(lower: &str) -> bool {
     let extensions: &[&str] = &[
-        ".7z", ".zip", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz",
+        ".7z", ".zip", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz", ".arc",
     ];
     extensions
         .iter()
@@ -203,7 +203,10 @@ pub(crate) fn looks_like_split_volume_path(path: &str) -> bool {
 
 pub(crate) fn looks_like_archive_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    looks_like_archive_extension(&lower) || looks_like_split_volume_path(path)
+    looks_like_archive_extension(&lower)
+        || (lower.ends_with(".bin")
+            && crate::archive_detect::is_freearc_archive(std::path::Path::new(path)))
+        || looks_like_split_volume_path(path)
 }
 
 /// Parse the UTF-8, newline-delimited payload produced by FreeAce's Windows

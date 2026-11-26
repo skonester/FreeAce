@@ -62,6 +62,13 @@ removing the source. On Windows, **Disk images** mounts read-only optical media
 directly in FreeAce, including images extracted from an archive. See
 [in-place extraction and disk images](docs/IN-PLACE-EXTRACTION.md).
 
+On Windows, choose **Open Archive** and select a FreeArc `.arc` file or a
+FreeArc installer payload such as `setup-1.bin`. FreeAce browses, tests, and
+extracts supported payloads directly, including the RUNE variant with a custom
+checksum. Open each numbered `.bin` separately when each is a complete archive.
+Support is read-only and covers the built-in codecs listed in the
+[decoder documentation](third_party/freeace-unarc/README.md).
+
 ## System requirements
 
 - macOS 26 or later. The universal build supports Intel and Apple silicon Macs

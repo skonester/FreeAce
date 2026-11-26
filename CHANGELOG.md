@@ -1,6 +1,25 @@
 
 FreeAce! A cross platform 7Z gui frontend built on Tauri V2!
 
+## Changes in `v0.7.0:`
+
+### 2026-11-26 (11/26/26): FreeArc `.arc` and `.bin` support on Windows
+
+- Windows can browse, test and extract FreeArc archives. Choose **Open Archive**
+  and select a `.arc` file or a FreeArc installer payload such as `setup-1.bin`.
+  Support is read-only and includes the RUNE variant, which uses a custom
+  checksum.
+- FreeAce detects FreeArc by the file header, not the extension. A `.bin` file
+  opens as an archive only when it starts with the FreeArc signature, so raw
+  disk images such as `track.bin` are not mistaken for archives. Open each
+  numbered `.bin` separately when each is a complete archive.
+- FreeArc decoding runs in `freeace-unarc`, a separate helper derived from
+  go-unarc under GPL-2.0. It supports the `storing`, `lzma`, `rep`, `4x4` and
+  `tor` codecs. Password codecs, installer scripts, external codec plugins and
+  split streams are not supported. See `third_party/freeace-unarc/README.md`.
+- The Windows installer associates `.arc` files with FreeAce.
+- Building for Windows now requires Go 1.26 or newer. Users do not need Go.
+
 ## Changes in `v0.6.5:`
 
 ### 2026-11-19 (11/19/26): Verified archive extraction and Windows disk images

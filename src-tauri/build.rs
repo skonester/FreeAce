@@ -409,6 +409,34 @@ fn prepare_7z_binaries() {
     }
 }
 
+fn prepare_freearc_decoder() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("x86_64") => "amd64",
+        Ok("aarch64") => "arm64",
+        other => panic!("FreeArc decoder has no Windows build for {other:?}"),
+    };
+    let target = std::env::var("TARGET").expect("missing Cargo target");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = root.join("../third_party/freeace-unarc");
+    let output = root.join(format!("binaries/freeace-unarc-{target}.exe"));
+    println!("cargo:rerun-if-changed={}", source.display());
+    let status = std::process::Command::new("go")
+        .current_dir(source)
+        .env("GOOS", "windows")
+        .env("GOARCH", arch)
+        .env("CGO_ENABLED", "0")
+        .env("GOTOOLCHAIN", "local")
+        .args(["build", "-mod=readonly", "-trimpath", "-o"])
+        .arg(output)
+        .arg("./cmd/freeace-unarc")
+        .status()
+        .expect("Go 1.26 or newer is required to build the Windows FreeArc decoder");
+    assert!(status.success(), "Windows FreeArc decoder build failed");
+}
+
 fn main() {
     println!("cargo:rerun-if-env-changed=APPLE_TEAM_ID");
     let app_group = match std::env::var("APPLE_TEAM_ID") {
@@ -421,6 +449,7 @@ fn main() {
     };
     println!("cargo:rustc-env=FREEACE_APP_GROUP_ID={app_group}");
     prepare_7z_binaries();
+    prepare_freearc_decoder();
     const COMMANDS: &[&str] = &[
         "plan_in_place_extract",
         "mount_disk_image",

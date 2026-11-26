@@ -77,6 +77,8 @@ const BASIC_ARCHIVE_EXTENSIONS = [
   "xz",
   "txz",
   "rar",
+  "arc",
+  "bin",
   "001",
 ];
 

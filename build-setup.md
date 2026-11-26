@@ -13,6 +13,8 @@
 - **Windows SDK** (`makeappx.exe`) only if building the optional, signed Win11
   sparse context-menu packages (`npm run build:win:context-menu`)
 - Node.js `^22.22.2 || ^24.15.0 || >=26` (`engines.node` in package.json)
+- Go 1.26 or newer to build the bundled FreeArc decoder. FreeAce users run the
+  compiled decoder without installing Go.
 - Rust (rustup) with the **MSVC** host (`x86_64-pc-windows-msvc`) + Visual Studio
   Build Tools. `rust-toolchain.toml` pins `stable`, which resolves against the
   rustup default host; a `-gnu` host fails with `dlltool.exe: program not found`.

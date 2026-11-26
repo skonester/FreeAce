@@ -45,12 +45,14 @@ async function renderLicenses() {
       sevenZipLicense,
       gleipnirLicense,
       dimLicense,
+      unarcLicense,
     ] = await Promise.all([
       loadLicenseFile("/licenses.json"),
       loadLicenseFile("/licenses-cargo.json"),
       loadTextFile("/7zip-license.txt"),
       loadTextFile("/gleipnir-license.txt"),
       loadTextFile("/dim-license.txt"),
+      loadTextFile("/freeace-unarc-license.txt"),
     ]);
     const data = { ...(npmLicenses ?? {}), ...(cargoLicenses ?? {}) };
     container.innerHTML = "";
@@ -107,6 +109,36 @@ async function renderLicenses() {
       dimCard.querySelector(".license-card__body")?.appendChild(pre);
     }
     container.appendChild(dimCard);
+
+    const unarcCard = document.createElement("details");
+    unarcCard.className = "license-card";
+    unarcCard.innerHTML =
+      `<summary class="license-card__header">` +
+      `<strong>freeace-unarc</strong><span class="license-card__tag">GPL-2.0</span>` +
+      `</summary>` +
+      `<div class="license-card__body">` +
+      `<p>FreeArc decoder derived from <a href="https://github.com/n0madic/go-unarc" target="_blank" rel="noopener">go-unarc</a> by n0madic, used for .arc and .bin archives on Windows.</p>` +
+      `<p>Bundled as a separate subprocess, not linked into this application.</p>` +
+      `</div>`;
+    if (unarcLicense) {
+      const pre = document.createElement("pre");
+      pre.className = "license-card__text";
+      pre.textContent = unarcLicense;
+      unarcCard.querySelector(".license-card__body")?.appendChild(pre);
+    }
+    container.appendChild(unarcCard);
+
+    const logoCard = document.createElement("details");
+    logoCard.className = "license-card";
+    logoCard.innerHTML =
+      `<summary class="license-card__header">` +
+      `<strong>FreeAce logo</strong><span class="license-card__tag">GPL-2.0-or-later</span>` +
+      `</summary>` +
+      `<div class="license-card__body">` +
+      `<p>Rosie the Cat is adapted from the <a href="https://commons.wikimedia.org/wiki/File:Icecat.png" target="_blank" rel="noopener">GNU IceCat logo</a> by Hitflip.</p>` +
+      `<p>The original artwork is offered under MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later. FreeAce uses it under GPL-2.0-or-later.</p>` +
+      `</div>`;
+    container.appendChild(logoCard);
 
     for (const [key, entry] of Object.entries(data)) {
       const card = document.createElement("details");

@@ -2,6 +2,8 @@
 
 use std::io::{Read, Seek, SeekFrom};
 
+const FREEARC_MAGIC: &[u8; 4] = b"ArC\x01";
+
 const ARCHIVE_SIGNATURE_SCAN_BYTES: usize = 1024;
 /// Keep aligned with `src/archive-rules.ts` MAX_ARCHIVE_PATHS and the 7-Zip
 /// argument ceiling in `validation.rs`.
@@ -35,6 +37,8 @@ fn expected_archive_family(lower_path: &str) -> Option<&'static str> {
         Some("bzip2")
     } else if lower_path.ends_with(".xz") {
         Some("xz")
+    } else if lower_path.ends_with(".arc") {
+        Some("freearc")
     } else if lower_path.ends_with(".freeace") || lower_path.ends_with(".tar.freeace") {
         Some("freeace")
     } else {
@@ -70,12 +74,23 @@ pub fn detect_archive_signature(bytes: &[u8]) -> Option<&'static str> {
     if starts_with_bytes(bytes, &[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]) {
         return Some("xz");
     }
+    if starts_with_bytes(bytes, FREEARC_MAGIC) {
+        return Some("freearc");
+    }
     // Gleipnir's `GEN_MAGIC` (0x414E4547 little-endian) is the literal ASCII
     // bytes "GENA" on disk.
     if starts_with_bytes(bytes, b"GENA") {
         return Some("freeace");
     }
     None
+}
+
+pub(crate) fn is_freearc_archive(path: &std::path::Path) -> bool {
+    let Ok(mut file) = crate::path_safety::open_regular_file_nofollow(path) else {
+        return false;
+    };
+    let mut magic = [0; FREEARC_MAGIC.len()];
+    file.read_exact(&mut magic).is_ok() && &magic == FREEARC_MAGIC
 }
 
 fn parse_tar_octal_field(field: &[u8]) -> Option<u64> {
@@ -387,6 +402,7 @@ fn validate_archive_path_impl(path: &str, include_identity: bool) -> ArchivePath
         Some("gzip") => signature == Some("gzip"),
         Some("bzip2") => signature == Some("bzip2"),
         Some("xz") => signature == Some("xz"),
+        Some("freearc") => signature == Some("freearc"),
         Some("freeace") => signature == Some("freeace"),
         Some("tar") => tar,
         _ => signature.is_some() || tar || embedded_archive_kind(&mut selected_file).is_some(),
@@ -512,6 +528,20 @@ mod tests {
             expected_archive_family("archive.tar.freeace"),
             Some("freeace")
         );
+    }
+
+    #[test]
+    fn freearc_validation_uses_the_header_for_arc_and_bin() {
+        let root = tempfile::tempdir().expect("temp dir");
+        for extension in ["arc", "bin"] {
+            let path = root.path().join(format!("setup-1.{extension}"));
+            std::fs::write(&path, b"ArC\x01\0\0\x06\x07").expect("archive header");
+            let result = validate_archive_path(&path.to_string_lossy());
+            assert!(result.valid, "{:?}", result.reason);
+
+            std::fs::write(&path, b"not an archive").expect("non-archive header");
+            assert!(!validate_archive_path(&path.to_string_lossy()).valid);
+        }
     }
 
     #[test]

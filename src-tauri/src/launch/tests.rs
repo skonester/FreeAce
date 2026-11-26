@@ -495,6 +495,17 @@ fn looks_like_archive_path_rejects_bare_numeric_suffix() {
 }
 
 #[test]
+fn bin_auto_open_requires_a_freearc_header() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let archive = dir.path().join("setup-1.bin");
+    let raw_image = dir.path().join("track.bin");
+    std::fs::write(&archive, b"ArC\x01\0\0\x06\x07").expect("archive header");
+    std::fs::write(&raw_image, b"raw image data").expect("non-archive header");
+    assert!(looks_like_archive_path(&archive.to_string_lossy()));
+    assert!(!looks_like_archive_path(&raw_image.to_string_lossy()));
+}
+
+#[test]
 fn looks_like_split_volume_accepts_sibling_volumes() {
     let base = temp_base("split-volume");
     let first = base.join("chunk.001");

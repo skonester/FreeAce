@@ -154,7 +154,7 @@ impl Drop for ManagedListFile {
     fn drop(&mut self) {
         if let Err(error) = std::fs::remove_file(&self.0) {
             if error.kind() != std::io::ErrorKind::NotFound {
-                eprintln!("Could not remove the temporary 7-Zip list file: {error}");
+                eprintln!("Could not remove the temporary archive list file: {error}");
             }
         }
         if let Some(parent) = self.0.parent() {
@@ -223,19 +223,27 @@ fn prepare_managed_listfile(args: &mut Vec<String>) -> Result<Option<ManagedList
     if selected_start >= args.len() {
         return Ok(None);
     }
-    let token = super::staging::random_token()?;
-    let private_dir = std::env::temp_dir().join(format!("freeace-7z-list-{token}"));
-    crate::fs_secure::create_private_dir(&private_dir)
-        .map_err(|error| format!("Could not secure the 7-Zip list directory: {error}"))?;
-    let listfile = ManagedListFile(private_dir.join("items.txt"));
-    let selected =
-        rewrite_args_for_managed_listfile(args, format!("@{}", listfile.0.to_string_lossy()))?;
+    let selected = args[selected_start..].to_vec();
+    let listfile = write_managed_listfile(&selected, true)?;
+    rewrite_args_for_managed_listfile(args, format!("@{}", listfile.0.to_string_lossy()))?;
+    Ok(Some(listfile))
+}
+
+fn write_managed_listfile(
+    selected: &[String],
+    escape_leading_dash: bool,
+) -> Result<ManagedListFile, String> {
     if selected.iter().any(|path| path.contains(['\r', '\n'])) {
         return Err(
-            "A selected path contains a line break and cannot be placed in a managed 7-Zip list file."
+            "A selected path contains a line break and cannot be placed in a list file."
                 .to_string(),
         );
     }
+    let token = super::staging::random_token()?;
+    let private_dir = std::env::temp_dir().join(format!("freeace-7z-list-{token}"));
+    crate::fs_secure::create_private_dir(&private_dir)
+        .map_err(|error| format!("Could not secure the archive list directory: {error}"))?;
+    let listfile = ManagedListFile(private_dir.join("items.txt"));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -245,23 +253,22 @@ fn prepare_managed_listfile(args: &mut Vec<String>) -> Result<Option<ManagedList
     }
     let mut file = options
         .open(&listfile.0)
-        .map_err(|error| format!("Could not create a private 7-Zip list file: {error}"))?;
-    for path in &selected {
+        .map_err(|error| format!("Could not create a private archive list file: {error}"))?;
+    for path in selected {
         // A leading dash still has switch shape. A leading `@` inside a
         // listfile is a literal member name (only command-line `@file` opens a
         // second listfile), so preserve it.
-        let line = if path.starts_with('-') {
-            format!("./{path}")
-        } else {
-            path.clone()
-        };
-        file.write_all(line.as_bytes())
+        if escape_leading_dash && path.starts_with('-') {
+            file.write_all(b"./")
+                .map_err(|error| format!("Could not write the archive list file: {error}"))?;
+        }
+        file.write_all(path.as_bytes())
             .and_then(|_| file.write_all(b"\r\n"))
-            .map_err(|error| format!("Could not write the 7-Zip list file: {error}"))?;
+            .map_err(|error| format!("Could not write the archive list file: {error}"))?;
     }
     file.flush()
-        .map_err(|error| format!("Could not finish the 7-Zip list file: {error}"))?;
-    Ok(Some(listfile))
+        .map_err(|error| format!("Could not finish the archive list file: {error}"))?;
+    Ok(listfile)
 }
 
 pub(crate) fn terminate_child(child: &Arc<SharedChild>) -> Result<(), String> {
@@ -498,11 +505,58 @@ pub(crate) fn mask_password_arg_tokens(args: &mut [String]) {
     }
 }
 
+fn freearc_operands(args: &[String]) -> Result<Option<Vec<String>>, String> {
+    let Some(separator) = args.iter().position(|arg| arg == "--") else {
+        return Ok(None);
+    };
+    if separator == 0 {
+        return Ok(None);
+    }
+    let [archive, members @ ..] = &args[separator + 1..] else {
+        return Ok(None);
+    };
+    let command = args[0].as_str();
+    if !matches!(command, "l" | "t" | "x")
+        || !crate::archive_detect::is_freearc_archive(std::path::Path::new(archive))
+    {
+        return Ok(None);
+    }
+    if !cfg!(windows) {
+        return Err("FreeArc extraction is available in the Windows build.".to_string());
+    }
+    for arg in &args[1..separator] {
+        let lower = arg.to_ascii_lowercase();
+        if lower.starts_with("-p") {
+            return Err("Password-protected FreeArc archives are unsupported.".to_string());
+        }
+        if (lower.starts_with("-i") || lower.starts_with("-x")) && lower.contains('!') {
+            return Err("FreeArc does not support 7-Zip include or exclude switches. Select archive members from Browse instead.".to_string());
+        }
+        if lower
+            .strip_prefix("-t")
+            .is_some_and(|kind| kind != "freearc")
+        {
+            return Err(
+                "The requested archive type does not match the FreeArc header.".to_string(),
+            );
+        }
+    }
+    let mut operands = vec![command.to_string(), archive.clone()];
+    if command == "x" {
+        let destination = super::staging::operation_output_path(args)
+            .ok_or_else(|| "FreeArc extraction is missing a destination.".to_string())?;
+        operands.push(destination.to_string_lossy().into_owned());
+        operands.extend_from_slice(members);
+    }
+    Ok(Some(operands))
+}
+
 pub(crate) fn spawn_7z_noninteractive(
     app: &tauri::AppHandle,
     mut args: Vec<String>,
     state: &RunningProcess,
 ) -> Result<Spawned7z, String> {
+    let freearc = freearc_operands(&args)?;
     // A command-line password is visible to same-user process inspection on
     // several desktop platforms. Remove it before spawn and answer 7-Zip's
     // password prompt through a short-lived pipe. Create/update write the
@@ -523,10 +577,23 @@ pub(crate) fn spawn_7z_noninteractive(
     // Always use a private response list for caller-selected paths. Besides
     // avoiding platform-specific execve/command-line ceilings, this keeps the
     // path transport identical across Windows, macOS, and Linux.
-    let listfile = prepare_managed_listfile(&mut args)?;
+    let (sidecar, listfile) = if let Some(mut operands) = freearc {
+        let listfile = if operands.len() > 3 {
+            let listfile = write_managed_listfile(&operands[3..], false)?;
+            operands.truncate(3);
+            operands.push(listfile.0.to_string_lossy().into_owned());
+            Some(listfile)
+        } else {
+            None
+        };
+        args = operands;
+        ("freeace-unarc", listfile)
+    } else {
+        ("7z", prepare_managed_listfile(&mut args)?)
+    };
     let plugin_command = app
         .shell()
-        .sidecar("7z")
+        .sidecar(sidecar)
         .map_err(|error| error.to_string())?
         .args(args);
     let mut command: std::process::Command = plugin_command.into();

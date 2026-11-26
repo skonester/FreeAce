@@ -12,6 +12,7 @@ export const ARCHIVE_EXTENSIONS = new Set([
   ".xz",
   ".txz",
   ".rar",
+  ".arc",
 ]);
 
 export function escapeHtml(s: string): string {
