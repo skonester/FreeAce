@@ -60,6 +60,10 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: third_party/freeace-unarc/go.mod
+          cache-dependency-path: third_party/freeace-unarc/go.sum
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
@@ -102,7 +106,7 @@ jobs:
       - name: Install latest npm 12
         run: npm install --global npm@${{ env.NPM_VERSION }} --ignore-scripts --min-release-age=3
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        if: runner.os == 'Windows'
+        if: runner.os != 'macOS'
         with:
           go-version-file: third_party/freeace-unarc/go.mod
           cache-dependency-path: third_party/freeace-unarc/go.sum
@@ -190,7 +194,7 @@ jobs:
       - name: Install latest npm 12
         run: npm install --global npm@${{ env.NPM_VERSION }} --ignore-scripts --min-release-age=3
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        if: runner.os == 'Windows'
+        if: runner.os != 'macOS'
         with:
           go-version-file: third_party/freeace-unarc/go.mod
           cache-dependency-path: third_party/freeace-unarc/go.sum

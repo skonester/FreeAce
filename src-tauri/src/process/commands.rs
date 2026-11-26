@@ -521,8 +521,8 @@ fn freearc_operands(args: &[String]) -> Result<Option<Vec<String>>, String> {
     {
         return Ok(None);
     }
-    if !cfg!(windows) {
-        return Err("FreeArc extraction is available in the Windows build.".to_string());
+    if !cfg!(any(windows, target_os = "linux")) {
+        return Err("FreeArc extraction is available in the Windows and Linux builds.".to_string());
     }
     for arg in &args[1..separator] {
         let lower = arg.to_ascii_lowercase();

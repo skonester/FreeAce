@@ -3,9 +3,9 @@ FreeAce! A cross platform 7Z gui frontend built on Tauri V2!
 
 ## Changes in `v0.7.0:`
 
-### 2026-11-26 (11/26/26): FreeArc `.arc` and `.bin` support on Windows
+### 2026-11-26 (11/26/26): FreeArc `.arc` and `.bin` support on Windows and Linux
 
-- Windows can browse, test and extract FreeArc archives. Choose **Open Archive**
+- Windows and Linux can browse, test and extract FreeArc archives. Choose **Open Archive**
   and select a `.arc` file or a FreeArc installer payload such as `setup-1.bin`.
   Support is read-only and includes the RUNE variant, which uses a custom
   checksum.
@@ -17,8 +17,8 @@ FreeAce! A cross platform 7Z gui frontend built on Tauri V2!
   go-unarc under GPL-2.0. It supports the `storing`, `lzma`, `rep`, `4x4` and
   `tor` codecs. Password codecs, installer scripts, external codec plugins and
   split streams are not supported. See `third_party/freeace-unarc/README.md`.
-- The Windows installer associates `.arc` files with FreeAce.
-- Building for Windows now requires Go 1.26 or newer. Users do not need Go.
+- The Windows and Linux packages associate `.arc` files with FreeAce.
+- Building for Windows or Linux now requires Go 1.26 or newer. Users do not need Go.
 
 ## Changes in `v0.6.5:`
 
@@ -109,7 +109,7 @@ FreeAce! A cross platform 7Z gui frontend built on Tauri V2!
 
 ## Changes in `v0.6.2:`
 
-- **License:** FreeAce is now GPL-3.0-or-later. Upstream code remains available under MPL-2.0; see `LICENSE.md`.
+- **License:** FreeAce is now GPL-3.0-or-later. Upstream code remains available under MPL-2.0; see the License section of `README.md`.
 - **UI:** Settings › Compression › Defaults now offers the `.freeace` format and greys out the controls Gleipnir does not support (method, dictionary, word size, solid, file-name encryption).
 - **UI:** Basic mode home screen shows a larger FreeAce mark and drops the duplicate "Drop a file here" text above the dropzone.
 - **UI:** The CPU benchmark now explains its result (score, compress/decompress throughput, and threads kept busy) instead of a bare number.

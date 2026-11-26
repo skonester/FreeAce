@@ -117,7 +117,7 @@ async function renderLicenses() {
       `<strong>freeace-unarc</strong><span class="license-card__tag">GPL-2.0</span>` +
       `</summary>` +
       `<div class="license-card__body">` +
-      `<p>FreeArc decoder derived from <a href="https://github.com/n0madic/go-unarc" target="_blank" rel="noopener">go-unarc</a> by n0madic, used for .arc and .bin archives on Windows.</p>` +
+      `<p>FreeArc decoder derived from <a href="https://github.com/n0madic/go-unarc" target="_blank" rel="noopener">go-unarc</a> by n0madic, used for .arc and .bin archives on Windows and Linux.</p>` +
       `<p>Bundled as a separate subprocess, not linked into this application.</p>` +
       `</div>`;
     if (unarcLicense) {

@@ -40,14 +40,20 @@ the directory right next to the original file.
 
 This is meant as a personal hobby project over time.
 
-it currently supports
-freeace
-7z
-zip
-tar
-gzip
-bzip2
-xz
+## Supported formats
+
+| Format | Extensions | Open and extract | Create |
+| --- | --- | --- | --- |
+| FreeAce | `.freeace`, `.tar.freeace` | Yes | Yes |
+| 7z | `.7z` | Yes | Yes |
+| ZIP | `.zip` | Yes | Yes |
+| TAR | `.tar` | Yes | Yes |
+| gzip | `.gz`, `.tgz` | Yes | Yes |
+| bzip2 | `.bz2`, `.tbz2` | Yes | Yes |
+| xz | `.xz`, `.txz` | Yes | Yes |
+| RAR | `.rar` | Yes | No |
+| FreeArc | `.arc`, `.bin` | Yes | No |
+| Split volumes | `.001`, `.002`, ... | Yes | Yes |
 
 
 to understand the format FreeAce uses for its
@@ -62,7 +68,7 @@ removing the source. On Windows, **Disk images** mounts read-only optical media
 directly in FreeAce, including images extracted from an archive. See
 [in-place extraction and disk images](docs/IN-PLACE-EXTRACTION.md).
 
-On Windows, choose **Open Archive** and select a FreeArc `.arc` file or a
+Choose **Open Archive** and select a FreeArc `.arc` file or a
 FreeArc installer payload such as `setup-1.bin`. FreeAce browses, tests, and
 extracts supported payloads directly, including the RUNE variant with a custom
 checksum. Open each numbered `.bin` separately when each is a complete archive.
@@ -169,3 +175,18 @@ native build runs.
   `--check` remains available if you only want validation.
 - Do not push a release tag until every platform artifact is present and its
   updater signature and checksum have been verified.
+
+## License
+
+FreeAce is licensed under the GNU General Public License v3.0 or later. See
+[LICENSE](LICENSE).
+
+FreeAce is a fork of the BurntToasters project. That upstream code remains
+under the Mozilla Public License 2.0 ([text](docs/MPL-2.0.txt)), which permits
+distributing it as part of this GPL-3.0-or-later work.
+
+Bundled components keep their own licenses: 7-Zip (LGPL, BSD and unRAR
+restriction), Gleipnir (GPL-3.0-or-later), freeace-unarc (GPL-2.0, from
+go-unarc) and DIM (MIT). The FreeAce logo, Rosie the Cat, is adapted from the
+GNU IceCat logo by Hitflip, used under GPL-2.0-or-later. Every license is
+viewable in the app under Settings › App › View Open-Source Licenses.

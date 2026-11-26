@@ -1,5 +1,9 @@
 {
   "bundle": {
+    "externalBin": ["binaries/7z", "binaries/gleipnir", "binaries/freeace-unarc"],
+    "resources": {
+      "../third_party/freeace-unarc/LICENSE": "freeace-unarc-LICENSE.txt"
+    },
     "fileAssociations": [
       {
         "ext": ["7z"],
@@ -50,6 +54,11 @@
         "ext": ["txz"],
         "mimeType": "application/x-xz-compressed-tar",
         "description": "XZ Compressed TAR Archive"
+      },
+      {
+        "ext": ["arc"],
+        "mimeType": "application/x-freearc",
+        "description": "FreeArc Archive"
       },
       {
         "ext": ["rar"],

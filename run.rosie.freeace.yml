@@ -5,6 +5,7 @@ sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
   - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.golang
 command: freeace
 separate-locales: false
 
@@ -36,7 +37,7 @@ modules:
       # sources come from the clean commit export prepared by the host script.
       build-args:
         - --share=network
-      append-path: /run/build/freeace/npm-global/bin:/usr/lib/sdk/node22/bin:/usr/lib/sdk/rust-stable/bin
+      append-path: /run/build/freeace/npm-global/bin:/usr/lib/sdk/node22/bin:/usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/golang/bin
       env:
         CARGO_HOME: /run/build/freeace/cargo
         RUSTUP_HOME: /run/build/freeace/rustup
@@ -58,9 +59,11 @@ modules:
         case "$FLATPAK_ARCH" in
           aarch64)
             install -Dm755 src-tauri/binaries/7z-aarch64-unknown-linux-gnu /app/bin/7z
+            install -Dm755 src-tauri/binaries/freeace-unarc-aarch64-unknown-linux-gnu /app/bin/freeace-unarc
             ;;
           x86_64)
             install -Dm755 src-tauri/binaries/7z-x86_64-unknown-linux-gnu /app/bin/7z
+            install -Dm755 src-tauri/binaries/freeace-unarc-x86_64-unknown-linux-gnu /app/bin/freeace-unarc
             ;;
           *)
             echo "Unsupported FLATPAK_ARCH=$FLATPAK_ARCH (expected x86_64 or aarch64)" >&2
